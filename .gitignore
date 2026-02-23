@@ -1,0 +1,39 @@
+# CI4 .gitignore
+
+# Writable directory (logs, cache, uploads)
+writable/cache/*
+writable/logs/*
+writable/session/*
+writable/uploads/*
+writable/debugbar/*
+!writable/cache/.gitkeep
+!writable/logs/.gitkeep
+!writable/session/.gitkeep
+!writable/uploads/.gitkeep
+
+# Vendor directory (installed via composer)
+vendor/
+
+# Environment file (contains DB passwords)
+.env
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+Thumbs.db
+.DS_Store
+desktop.ini
+
+# Composer
+composer.lock
+
+# Node
+node_modules/
+
+# Build artifacts
+builds/
