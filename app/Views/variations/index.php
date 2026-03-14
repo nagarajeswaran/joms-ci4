@@ -1,0 +1,29 @@
+﻿<?php $this->extend('layouts/main') ?>
+<?php $this->section('content') ?>
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h6 class="mb-0"><?= count($items) ?> Variations</h6>
+    <a href="<?= base_url('variations/create') ?>" class="btn btn-primary btn-sm"><i class="bi bi-plus"></i> Add New</a>
+</div>
+<div class="card">
+    <div class="card-body p-0">
+        <table class="table table-hover mb-0">
+            <thead><tr><th>#</th><th>Group Name</th><th>Name</th><th>Size</th><th>Actions</th></tr></thead>
+            <tbody>
+                <?php foreach ($items as $i => $item): ?>
+                <tr>
+                    <td><?= $i + 1 ?></td>
+                    <td><?= esc($item['group_name'] ?? '') ?></td>
+                    <td><?= esc($item['name']) ?></td>
+                    <td><?= esc($item['size'] ?? '') ?></td>
+                    <td>
+                        <a href="<?= base_url('variations/edit/' . $item['id']) ?>" class="btn btn-warning btn-sm"><i class="bi bi-pencil"></i></a>
+                        <a href="<?= base_url('variations/delete/' . $item['id']) ?>" class="btn btn-danger btn-sm" onclick="return confirm('Delete?')"><i class="bi bi-trash"></i></a>
+                    </td>
+                </tr>
+                <?php endforeach; ?>
+                <?php if (empty($items)): ?><tr><td colspan="5" class="text-center text-muted py-4">No variations found</td></tr><?php endif; ?>
+            </tbody>
+        </table>
+    </div>
+</div>
+<?php $this->endSection() ?>
