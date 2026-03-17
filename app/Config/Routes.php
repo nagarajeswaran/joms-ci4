@@ -158,6 +158,7 @@ $routes->get('stock/labels/(:num)', 'Stock::labels/$1');
 $routes->get('stock/scan', 'Stock::scan');
 $routes->post('stock/get-stock-info', 'Stock::getStockInfo');
 $routes->post('stock/deduct', 'Stock::deduct');
+$routes->post('stock/bulk-deduct', 'Stock::bulkDeduct');
 $routes->get('stock/transfer', 'Stock::transfer');
 $routes->post('stock/save-transfer', 'Stock::saveTransfer');
 $routes->get('stock/low-stock', 'Stock::lowStock');

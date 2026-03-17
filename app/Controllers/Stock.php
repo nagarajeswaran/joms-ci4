@@ -615,4 +615,54 @@ class Stock extends BaseController
         $title = 'Stock Audit Log';
         return view('stock/audit_log', compact('transactions', 'locations', 'locId', 'type', 'from', 'to', 'q', 'title'));
     }
+
+    public function bulkDeduct()
+    {
+        $locationId = (int)$this->request->getPost('location_id');
+        $partyName  = $this->request->getPost('party_name') ?? '';
+        $notes      = $this->request->getPost('notes') ?? '';
+        $items      = $this->request->getPost('items') ?? [];
+
+        if (!$locationId) return $this->response->setJSON(['error' => 'Location required']);
+        if (empty($items)) return $this->response->setJSON(['error' => 'No items to deduct']);
+
+        $now = date('Y-m-d H:i:s');
+        $deducted = 0;
+        $errors   = [];
+        $noteText = 'QR scan sale' . ($partyName ? ' - ' . $partyName : '') . ($notes ? ' - ' . $notes : '');
+
+        foreach ($items as $item) {
+            $productId   = (int)($item['product_id'] ?? 0);
+            $patternId   = (int)($item['pattern_id'] ?? 0);
+            $variationId = (int)($item['variation_id'] ?? 0);
+            $qty         = (int)($item['qty'] ?? 1);
+            if (!$productId || !$patternId || !$variationId) continue;
+
+            $row = $this->db->query(
+                'SELECT qty FROM product_stock WHERE product_id=? AND pattern_id=? AND variation_id=? AND location_id=?',
+                [$productId, $patternId, $variationId, $locationId]
+            )->getRowArray();
+
+            if (!$row) {
+                $errors[] = "Item #{$productId} not found at this location";
+                continue;
+            }
+            if ($row['qty'] < $qty) {
+                $errors[] = "Insufficient stock for product #{$productId}";
+                continue;
+            }
+
+            $this->db->query(
+                'UPDATE product_stock SET qty = qty - ? WHERE product_id=? AND pattern_id=? AND variation_id=? AND location_id=?',
+                [$qty, $productId, $patternId, $variationId, $locationId]
+            );
+            $this->db->query(
+                'INSERT INTO stock_transaction (type,product_id,pattern_id,variation_id,location_id,qty,note,created_by,created_at) VALUES (?,?,?,?,?,?,?,?,?)',
+                ['out', $productId, $patternId, $variationId, $locationId, $qty, $noteText, 'system', $now]
+            );
+            $deducted++;
+        }
+
+        return $this->response->setJSON(['success' => true, 'deducted' => $deducted, 'errors' => $errors]);
+    }
 }
