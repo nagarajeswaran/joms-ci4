@@ -226,6 +226,9 @@ $routes->post('part-stock/print-labels', 'PartBatch::printLabels');
 $routes->get('part-stock/batch/(:num)', 'PartBatch::view/$1');
 $routes->get('part-stock/qr/(:num)', 'PartBatch::qrImage/$1');
 $routes->get('part-stock/scan', 'PartBatch::scan');
+$routes->get('part-stock/serial-settings', 'PartBatch::serialSettings');
+$routes->post('part-stock/save-serial-settings', 'PartBatch::saveSerialSettings');
+$routes->get('part-stock/lookup-batch', 'PartBatch::lookupBatch');
 
 // Melt Jobs
 $routes->get('melt-jobs', 'MeltJob::index');

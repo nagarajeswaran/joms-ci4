@@ -1,29 +1,31 @@
 <?= $this->extend('layouts/main') ?>
 <?= $this->section('content') ?>
-<h5 class="mb-3">Generate Batch Labels</h5>
+<div class="d-flex justify-content-between align-items-center mb-3">
+<h5 class="mb-0">Generate Batch Labels</h5>
+<a href="<?= base_url('part-stock/serial-settings') ?>" class="btn btn-outline-secondary btn-sm"><i class="bi bi-gear"></i> Serial Settings</a>
+</div>
 <div class="row">
 <div class="col-md-5">
 <div class="card mb-3">
-<div class="card-header"><strong>Step 1: Select Parts & Quantity</strong></div>
+<div class="card-header"><strong>Step 1: Select Parts &amp; Quantity</strong></div>
 <div class="card-body">
+    <p class="text-muted small">Next batch number: <strong><?= esc($nextPreview) ?></strong></p>
     <div id="itemRows"></div>
     <button type="button" class="btn btn-outline-secondary btn-sm mt-2" onclick="addRow()"><i class="bi bi-plus"></i> Add Part</button>
     <hr>
-    <button type="button" class="btn btn-primary" onclick="generateBatches()"><i class="bi bi-qr-code"></i> Generate Batch Numbers</button>
+    <button type="button" class="btn btn-primary" onclick="generateBatches()"><i class="bi bi-upc-scan"></i> Generate Batch Numbers</button>
 </div>
 </div>
 </div>
 <div class="col-md-7">
 <div class="card" id="batchResultCard" style="display:none">
-<div class="card-header d-flex justify-content-between align-items-center">
-    <strong>Step 2: Configure & Print</strong>
-</div>
+<div class="card-header"><strong>Step 2: Configure &amp; Print</strong></div>
 <div class="card-body">
 <div class="row mb-3">
     <div class="col"><label class="form-label">Paper Size</label>
     <select id="paperSize" class="form-select form-select-sm"><option value="A4">A4</option><option value="A5">A5</option><option value="Letter">Letter</option></select></div>
-    <div class="col"><label class="form-label">Rows</label><input type="number" id="printRows" class="form-control form-control-sm" value="4" min="1" max="10"></div>
-    <div class="col"><label class="form-label">Columns</label><input type="number" id="printCols" class="form-control form-control-sm" value="3" min="1" max="6"></div>
+    <div class="col"><label class="form-label">Rows</label><input type="number" id="printRows" class="form-control form-control-sm" value="14" min="1" max="50"></div>
+    <div class="col"><label class="form-label">Columns</label><input type="number" id="printCols" class="form-control form-control-sm" value="4" min="1" max="10"></div>
 </div>
 <div id="batchList" class="mb-3"></div>
 <button type="button" class="btn btn-success" onclick="printLabels()"><i class="bi bi-printer"></i> Print Labels</button>
@@ -31,14 +33,6 @@
 </div>
 </div>
 </div>
-
-<form id="printForm" method="post" action="<?= base_url('part-stock/print-labels') ?>" target="_blank">
-<?= csrf_field() ?>
-<input type="hidden" name="paper" id="fPaper">
-<input type="hidden" name="rows" id="fRows">
-<input type="hidden" name="cols" id="fCols">
-<div id="batchIdInputs"></div>
-</form>
 
 <template id="rowTpl">
 <div class="d-flex gap-2 mb-2 item-row">
@@ -54,8 +48,11 @@
 </template>
 <?= $this->endSection() ?>
 <?= $this->section('scripts') ?>
+<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
 <script>
 var rowIdx = 0;
+var generatedBatches = [];
+
 function addRow() {
     var tpl = document.getElementById('rowTpl').innerHTML.replace(/IDX/g, rowIdx++);
     document.getElementById('itemRows').insertAdjacentHTML('beforeend', tpl);
@@ -84,7 +81,8 @@ function generateBatches() {
     });
     fetch('<?= base_url('part-stock/generate-batch-numbers') ?>', {method:'POST', body: formData})
     .then(r => r.json()).then(function(data) {
-        if (!data.success) { alert('Error'); return; }
+        if (!data.success) { alert(data.error || 'Error generating batches'); return; }
+        generatedBatches = data.batches;
         var html = '<p class="text-success">'+data.batches.length+' batch numbers generated:</p>';
         html += '<div class="table-responsive"><table class="table table-sm table-bordered"><thead class="table-dark"><tr><th>Batch No</th><th>Part</th><th>Include?</th></tr></thead><tbody>';
         data.batches.forEach(function(b) {
@@ -99,15 +97,76 @@ function generateBatches() {
 function printLabels() {
     var checked = document.querySelectorAll('.batch-cb:checked');
     if (!checked.length) { alert('Select at least one batch'); return; }
-    document.getElementById('fPaper').value = document.getElementById('paperSize').value;
-    document.getElementById('fRows').value  = document.getElementById('printRows').value;
-    document.getElementById('fCols').value  = document.getElementById('printCols').value;
-    var cont = document.getElementById('batchIdInputs');
-    cont.innerHTML = '';
-    checked.forEach(function(cb) {
-        cont.insertAdjacentHTML('beforeend', '<input type="hidden" name="batch_ids[]" value="'+cb.value+'">');
-    });
-    document.getElementById('printForm').submit();
+
+    var selectedIds = Array.from(checked).map(function(cb){ return String(cb.value); });
+    var batches = generatedBatches.filter(function(b){ return selectedIds.includes(String(b.id)); });
+    if (!batches.length) { alert('No batch data found. Please regenerate.'); return; }
+
+    var paper = document.getElementById('paperSize').value;
+    var cols  = Math.max(1, parseInt(document.getElementById('printCols').value) || 4);
+    var rows  = Math.max(1, parseInt(document.getElementById('printRows').value) || 14);
+
+    var paperDims = { 'A4':{w:210,h:297}, 'A5':{w:148,h:210}, 'Letter':{w:216,h:279} };
+    var dim  = paperDims[paper] || paperDims['A4'];
+    var lw   = dim.w / cols;
+    var lh   = dim.h / rows;
+    var fsName  = Math.max(4, Math.round(lh * 0.13));
+    var fsBatch = Math.max(5, Math.round(lh * 0.16));
+    var fsPcwt  = Math.max(4, Math.round(lh * 0.11));
+
+    var css = '@page{size:'+paper+' portrait;margin:0}'
+        + 'html,body{margin:0;padding:0;width:100%;height:100%;font-family:Arial,sans-serif}'
+        + '.label-page{display:grid;'
+        + 'grid-template-columns:repeat('+cols+',1fr);'
+        + 'grid-template-rows:repeat('+rows+',1fr);'
+        + 'width:100%;height:100vh;overflow:hidden;gap:0;'
+        + 'page-break-after:always;break-after:page}'
+        + '.label-page:last-child{page-break-after:avoid;break-after:avoid}'
+        + '.label-cell{box-sizing:border-box;border:0.4pt solid #aaa;display:flex;flex-direction:column;'
+        + 'align-items:center;justify-content:center;padding:0.5mm;overflow:hidden;text-align:center}'
+        + '.lc-name{font-size:'+fsName+'pt;font-weight:bold;line-height:1.1;'
+        + 'overflow:hidden;white-space:nowrap;text-overflow:ellipsis;max-width:100%}'
+        + '.lc-batch{font-size:'+fsBatch+'pt;font-weight:bold;color:#111;line-height:1.1;margin-bottom:0.5mm}'
+        + '.lc-bc svg{display:block;max-width:100%;height:auto}'
+        + '.lc-pcwt{font-size:'+fsPcwt+'pt;border-top:0.5pt dashed #aaa;'
+        + 'padding-top:0.5mm;width:100%;text-align:center;line-height:1.2}';
+
+    var perPage = cols * rows;
+    var pages = [];
+    for (var i = 0; i < batches.length; i += perPage) {
+        var chunk = batches.slice(i, i + perPage);
+        var cards = chunk.map(function(b) {
+            return '<div class="label-cell">'
+                + '<div class="lc-name">' + b.part_name + '</div>'
+                + '<div class="lc-batch">' + b.batch_number + '</div>'
+                + '<div class="lc-bc"><svg class="bc" data-val="' + b.batch_number + '"></svg></div>'
+                + '<div class="lc-pcwt">Pc Wt: ________ g</div>'
+                + '</div>';
+        }).join('');
+        pages.push('<div class="label-page">' + cards + '</div>');
+    }
+
+    var hint = '<div class="print-hint" style="font-family:Arial;font-size:11px;background:#fff3cd;padding:6px 10px;border-bottom:1px solid #ffc107;"><b>Print tip:</b> Set Margins = <b>None</b> and Scale = <b>100%</b> in print dialog. <a href="javascript:void(0)" onclick="this.parentElement.style.display='none'">Dismiss</a></div>';
+    var w = window.open('', '_blank', 'width=900,height=700');
+    w.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Batch Labels</title>'
+        + '<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"><\/script>'
+        + '<style>' + css + '@media print{.print-hint{display:none}}</style></head><body><div class="print-hint">' + hint + '</div>' + pages.join('') + '</body></html>');
+    w.document.close();
+    w.focus();
+    var _lh = lh;
+    setTimeout(function() {
+        var svgs = w.document.querySelectorAll('svg.bc');
+        svgs.forEach(function(svg) {
+            w.JsBarcode(svg, svg.getAttribute('data-val'), {
+                format: 'CODE128',
+                width: 1.2,
+                height: Math.max(8, _lh * 2.2),
+                displayValue: false,
+                margin: 0
+            });
+        });
+        setTimeout(function(){ w.print(); }, 300);
+    }, 800);
 }
 </script>
 <?= $this->endSection() ?>

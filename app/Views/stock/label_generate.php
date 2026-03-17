@@ -127,6 +127,7 @@
 
 <?= $this->endSection() ?>
 <?= $this->section('scripts') ?>
+<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
 <script>
 var CSRF_NAME  = '<?= csrf_token() ?>';
 var CSRF_TOKEN = '<?= csrf_hash() ?>';
@@ -325,20 +326,18 @@ document.getElementById('btnGenerate').addEventListener('click', function() {
             for (var c = 0; c < times; c++) {
                 var card = document.createElement('div');
                 card.className = 'label-card';
-                card.style.cssText = 'width:' + previewW + 'px;height:' + previewH + 'px;padding:2px;box-sizing:border-box;display:flex;flex-direction:column;align-items:center;justify-content:center;overflow:hidden;';
-                                var patLine = (!lbl.pat_is_default && lbl.pattern_label) ? ' \u2022 ' + lbl.pattern_label : '';
+                card.style.cssText = 'width:' + previewW + 'px;height:' + previewH + 'px;box-sizing:border-box;display:flex;align-items:center;padding:2px;overflow:hidden;';
+                var patLine = (!lbl.pat_is_default && lbl.pattern_label) ? lbl.pattern_label : '';
                 var sizeTxt = lbl.size ? lbl.size + ' INCH' : lbl.variation_name.toUpperCase();
-                var topH = Math.round(previewH * 0.22);
+                var sideW = Math.round(previewW * 0.18);
                 card.innerHTML =
-                    '<div style="overflow:hidden;text-align:center;line-height:1.2;padding-bottom:1px;max-width:100%;">'
-                    + '<span style="font-size:' + (fsProd+2) + 'px;font-weight:bold;text-transform:uppercase;">' + lbl.product_label + (lbl.sku ? ' (' + lbl.sku + ')' : '') + '</span>'
-                    + (patLine ? '<br><span style="font-size:' + fsPat + 'px;color:#555;font-style:italic;">' + patLine + '</span>' : '')
+                    '<div style="flex:0 0 ' + sideW + 'px;display:flex;align-items:center;justify-content:center;font-size:' + fsNum + 'px;font-weight:900;font-family:monospace;text-align:center;">#' + lbl.qr_number + '</div>'
+                    + '<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:0;overflow:hidden;">'
+                    + '<div style="font-size:' + (fsProd+2) + 'px;font-weight:bold;text-transform:uppercase;text-align:center;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;max-width:100%;">' + lbl.product_label + '</div>'
+                    + (patLine ? '<div style="font-size:' + fsPat + 'px;color:#555;font-style:italic;text-align:center;">' + patLine + '</div>' : '')
+                    + '<div style="display:flex;align-items:center;justify-content:center;"><svg class="bc" data-val="' + lbl.qr_number + '" style="display:block;"></svg></div>'
                     + '</div>'
-                    + '<div style="display:flex;align-items:center;justify-content:center;min-height:0;">'
-                    + '<div style="flex:0 0 auto;padding:0 4px;text-align:center;font-size:' + fsNum + 'px;font-weight:900;font-family:monospace;line-height:1;">#' + lbl.qr_number + '</div>'
-                    + '<div style="flex:0 0 auto;display:flex;align-items:center;justify-content:center;"><img src="data:image/png;base64,' + lbl.qr_image_base64 + '" style="width:' + previewQR + 'px;height:' + previewQR + 'px;display:block;"></div>'
-                    + '<div style="flex:0 0 auto;padding:0 4px;text-align:center;font-size:' + fsSz + 'px;font-weight:900;line-height:1;word-break:break-word;">' + sizeTxt + '</div>'
-                    + '</div>';
+                    + '<div style="flex:0 0 ' + sideW + 'px;display:flex;align-items:center;justify-content:center;font-size:' + fsSz + 'px;font-weight:900;text-align:center;word-break:break-word;text-transform:uppercase;">' + sizeTxt + '</div>';
 
                 card.dataset.prod = lbl.product_label || '';
                 card.dataset.sku  = lbl.sku || '';
@@ -349,6 +348,10 @@ document.getElementById('btnGenerate').addEventListener('click', function() {
             }
         });
 
+        var previewSideW = Math.round(previewW * 0.18);
+        var previewBcW = Math.round((previewW - previewSideW * 2) * 0.90);
+        var previewBcH = Math.max(14, Math.round(previewH * 0.48));
+        sheet.querySelectorAll('svg.bc').forEach(function(svg) { JsBarcode(svg, svg.getAttribute('data-val'), { format: 'CODE128', width: 1.5, height: previewBcH, displayValue: false, margin: 0 }); svg.style.width = previewBcW + 'px'; svg.style.height = 'auto'; });
         var totalCards = d.labels.reduce(function(s, l) { return s + (parseInt(l.qty) || 1); }, 0);
         document.getElementById('labelCount').textContent = totalCards;
         document.getElementById('printControls').style.display = '';
@@ -380,52 +383,60 @@ function printLabels() {
     var phys  = paperPhysical[paper] || paperPhysical['A4'];
     var lw    = dim.w / cols;
     var lh    = dim.h / rows;
-    var qrSz  = Math.min(lw, lh) * 0.60;
+    var qrSz  = Math.min(lw, lh) * 0.60;  // kept for compat
     var fsProd = Math.max(3, Math.round(lh * 0.14));
     var fsPat  = Math.max(2, Math.round(lh * 0.11));
     var fsSz   = Math.max(5, Math.round(lh * 0.30));
     var fsNum  = Math.max(5, Math.round(lh * 0.30));
-
+    // barcode: fill 90% of center column (lw minus two 18% sides), height ~48% of label height
+    var sideWmm  = lw * 0.18;
+    var bcWmm    = (lw - sideWmm * 2) * 0.90;
+    var bcHpx    = Math.max(14, Math.round(lh * 3.78 * 0.48));
     var css = '@page{size:' + paper + ' portrait;margin:0}'
         + 'body{margin:0;padding:0}'
-        + '.label-page{display:grid;grid-template-columns:repeat(' + cols + ',calc(' + phys.w + '/' + cols + '));grid-template-rows:repeat(' + rows + ',calc(' + phys.h + '/' + rows + '));width:' + phys.w + ';height:' + phys.h + ';overflow:hidden;gap:0;border:0.5px solid #555;page-break-after:always;break-after:page}'
+        + '.label-page{display:grid;grid-template-columns:repeat(' + cols + ',calc(' + phys.w + '/' + cols + '));grid-template-rows:repeat(' + rows + ',calc(' + phys.h + '/' + rows + '));width:' + phys.w + ';height:' + phys.h + ';overflow:hidden;gap:0;page-break-after:always;break-after:page}'
         + '.label-page:last-child{page-break-after:avoid;break-after:avoid}'
-        + '.label-card{box-sizing:border-box;overflow:hidden;display:flex;flex-direction:column;padding:0.3mm;border-right:0.4px solid #aaa;border-bottom:0.4px solid #aaa}'
-        + '.lc-top{overflow:hidden;text-align:center;line-height:1.2;font-size:' + (fsProd+1) + 'pt;padding-bottom:0.2mm;max-width:100%}'
-        + '.lc-top b{font-weight:bold;text-transform:uppercase}'
-        + '.lc-top i{color:#555;font-style:italic;font-size:' + fsPat + 'pt}'
-        + '.lc-mid{display:flex;flex:1;align-items:center;justify-content:center;min-height:0}'
-        + '.lc-num{flex:0 0 auto;padding:0 0.8mm;text-align:center;font-size:' + fsNum + 'pt;font-weight:900;font-family:monospace;line-height:1}'
-        + '.lc-qr{flex:0 0 auto;display:flex;align-items:center;justify-content:center}'
-        + '.lc-qr img{width:' + qrSz.toFixed(2) + 'mm;height:' + qrSz.toFixed(2) + 'mm;display:block}'
-        + '.lc-sz{flex:0 0 auto;padding:0 0.8mm;text-align:center;font-size:' + fsSz + 'pt;font-weight:900;line-height:1;word-break:break-word;text-transform:uppercase}';
+        + '.label-card{box-sizing:border-box;overflow:hidden;display:flex;align-items:center;padding:0.3mm;border-right:0.4px solid #aaa;border-bottom:0.4px solid #aaa}'
+        + '.lc-side{flex:0 0 auto;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0 0.5mm}'
+        + '.lc-num{font-size:' + fsNum + 'pt;font-weight:900;font-family:monospace;line-height:1;text-align:center}'
+        + '.lc-sz{font-size:' + fsSz + 'pt;font-weight:900;line-height:1;text-align:center;word-break:break-word;text-transform:uppercase}'
+        + '.lc-center{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:0;overflow:hidden}'
+        + '.lc-name{font-size:' + fsProd + 'pt;font-weight:bold;text-align:center;text-transform:uppercase;line-height:1.1;overflow:hidden;max-width:100%}'
+        + '.lc-pat{font-size:' + fsPat + 'pt;color:#444;text-align:center;line-height:1;overflow:hidden;max-width:100%}'
+        + '.lc-qr{width:100%}';
+    css += '.lc-qr svg{display:block;width:' + bcWmm.toFixed(1) + 'mm;height:auto;max-width:100%}';
 
-    // Group cards into pages of cols*rows
     var cards = Array.from(sheet.querySelectorAll('.label-card'));
     var perPage = cols * rows;
     var pages = [];
     for (var i = 0; i < cards.length; i += perPage) {
         var pageCards = cards.slice(i, i + perPage).map(function(card) {
             var dd = card.dataset;
-            var patLine = (dd.pat && dd.pat !== '') ? ' &bull; <i>' + dd.pat + '</i>' : '';
-            var img = card.querySelector('img');
-            var imgSrc = img ? img.src : '';
             return '<div class="label-card">'
-                + '<div class="lc-top"><b>' + (dd.prod||'') + (dd.sku ? ' ('+dd.sku+')' : '') + '</b>' + patLine + '</div>'
-                + '<div class="lc-mid">'
-                + '<div class="lc-num">#' + (dd.num||'') + '</div>'
-                + '<div class="lc-qr"><img src="' + imgSrc + '"></div>'
-                + '<div class="lc-sz">' + (dd.sz||'') + '</div>'
-                + '</div></div>';
+                + '<div class="lc-side"><div class="lc-num">#' + (dd.num||'') + '</div></div>'
+                + '<div class="lc-center">'
+                + '<div class="lc-name">' + (dd.prod||'') + '</div>'
+                + (dd.pat ? '<div class="lc-pat">' + dd.pat + '</div>' : '')
+                + '<div class="lc-qr"><svg class="bc" data-val="' + (dd.num||'') + '"></svg></div>'
+                + '</div>'
+                + '<div class="lc-side"><div class="lc-sz">' + (dd.sz||'') + '</div></div>'
+                + '</div>';
         }).join('');
         pages.push('<div class="label-page">' + pageCards + '</div>');
     }
-
+    var _bcHpx = bcHpx; var _bcWmm = bcWmm;
     var w = window.open('', '_blank', 'width=900,height=700');
-    w.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8"><title>QR Labels</title><style>' + css + '</style></head><body>' + pages.join('') + '</body></html>');
+    w.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Labels</title>'
+        + '<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"><\/script>'
+        + '<style>' + css + '</style></head><body>' + pages.join('') + '</body></html>');
     w.document.close();
     w.focus();
-    setTimeout(function() { w.print(); }, 700);
+    setTimeout(function() {
+        w.document.querySelectorAll('svg.bc').forEach(function(svg) {
+            w.JsBarcode(svg, svg.getAttribute('data-val'), { format: 'CODE128', width: 1.5, height: _bcHpx, displayValue: false, margin: 0 });
+        });
+        setTimeout(function() { w.print(); }, 300);
+    }, 800);
 }
 </script>
 <?= $this->endSection() ?>

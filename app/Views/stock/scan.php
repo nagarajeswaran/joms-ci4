@@ -1,7 +1,7 @@
 <?= $this->extend('layouts/main') ?>
 <?= $this->section('content') ?>
 <div class="d-flex justify-content-between align-items-center mb-3">
-    <h5><i class="bi bi-qr-code-scan"></i> QR Scan — Sale / Deduct Stock</h5>
+    <h5><i class="bi bi-qr-code-scan"></i> Scan — Sale / Deduct Stock</h5>
     <a href="<?= base_url('stock') ?>" class="btn btn-secondary btn-sm"><i class="bi bi-arrow-left"></i> Back</a>
 </div>
 
@@ -113,7 +113,7 @@
 
 <?= $this->endSection() ?>
 <?= $this->section('scripts') ?>
-<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@zxing/browser@0.1.4/umd/index.min.js"></script>
 <script>
 var html5QrCode = null;
 var scanList = [];

@@ -1,4 +1,4 @@
-﻿<?php $this->extend('layouts/main') ?>
+<?php $this->extend('layouts/main') ?>
 <?php $this->section('content') ?>
 <div class="mb-3 d-flex gap-2 flex-wrap">
     <a href="<?= base_url('orders/view/' . $order['id']) ?>" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left"></i> Back to Order</a>

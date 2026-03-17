@@ -44,13 +44,29 @@ class PartBatch extends BaseController
     {
         $db    = \Config\Database::connect();
         $parts = $db->query('SELECT id, name FROM part ORDER BY name')->getResultArray();
-        return view('part_batch/labels', ['title' => 'Generate Batch Labels', 'parts' => $parts]);
+        $config = $db->query('SELECT * FROM batch_serial_config WHERE id = 1')->getRowArray();
+        $nextPreview = ($config['prefix'] ?? 'A') . str_pad(($config['last_number'] ?? 0) + 1, 4, '0', STR_PAD_LEFT);
+        return view('part_batch/labels', [
+            'title'       => 'Generate Batch Labels',
+            'parts'       => $parts,
+            'nextPreview' => $nextPreview,
+        ]);
     }
 
     public function generateBatchNumbers()
     {
-        $db      = \Config\Database::connect();
-        $items   = $this->request->getPost('items') ?? [];
+        $db    = \Config\Database::connect();
+        $items = $this->request->getPost('items') ?? [];
+
+        $config = $db->query('SELECT * FROM batch_serial_config WHERE id = 1')->getRowArray();
+        if (!$config) {
+            return $this->response->setJSON(['success' => false, 'error' => 'Serial config not found. Please go to Serial Settings.']);
+        }
+
+        $prefix     = $config['prefix'];
+        $lastNumber = (int)$config['last_number'];
+        $maxNumber  = (int)$config['max_number'];
+
         $batches = [];
 
         foreach ($items as $item) {
@@ -61,18 +77,22 @@ class PartBatch extends BaseController
             $part = $db->query('SELECT id, name FROM part WHERE id = ?', [$partId])->getRowArray();
             if (!$part) continue;
 
-            // Get or create sequence
-            $seq = $db->query('SELECT last_sequence FROM part_batch_sequence WHERE part_id = ?', [$partId])->getRowArray();
-            $next = $seq ? (int)$seq['last_sequence'] : 0;
-
-            $prefix = strtoupper(preg_replace('/[^A-Z0-9]/', '', $part['name']));
-            $prefix = substr($prefix, 0, 8);
-
             for ($i = 0; $i < $qty; $i++) {
-                $next++;
-                $batchNo = $prefix . '-' . str_pad($next, 3, '0', STR_PAD_LEFT);
+                $lastNumber++;
+                if ($lastNumber > $maxNumber) {
+                    $nextPrefix = chr(ord($prefix) + 1);
+                    if ($nextPrefix > 'Z') {
+                        return $this->response->setJSON([
+                            'success' => false,
+                            'error'   => "Serial exhausted at Z{$maxNumber}. Go to Serial Settings to set a new prefix.",
+                        ]);
+                    }
+                    $prefix     = $nextPrefix;
+                    $lastNumber = 1;
+                }
 
-                // Insert pre-created batch
+                $batchNo = $prefix . str_pad($lastNumber, 4, '0', STR_PAD_LEFT);
+
                 $db->table('part_batch')->insert([
                     'batch_number' => $batchNo,
                     'part_id'      => $partId,
@@ -89,61 +109,62 @@ class PartBatch extends BaseController
                     'part_id'      => $partId,
                 ];
             }
-
-            // Update sequence
-            if ($seq) {
-                $db->query('UPDATE part_batch_sequence SET last_sequence = ? WHERE part_id = ?', [$next, $partId]);
-            } else {
-                $db->query('INSERT INTO part_batch_sequence (part_id, last_sequence) VALUES (?, ?)', [$partId, $next]);
-            }
         }
+
+        $db->query('UPDATE batch_serial_config SET prefix = ?, last_number = ?, updated_at = NOW() WHERE id = 1', [$prefix, $lastNumber]);
 
         return $this->response->setJSON(['success' => true, 'batches' => $batches]);
     }
 
-    public function printLabels()
+    public function scan()
     {
-        $db       = \Config\Database::connect();
-        $ids      = $this->request->getPost('batch_ids') ?? [];
-        $paper    = $this->request->getPost('paper') ?? 'A4';
-        $rows     = (int)($this->request->getPost('rows') ?? 4);
-        $cols     = (int)($this->request->getPost('cols') ?? 3);
+        return view('part_batch/scan', ['title' => 'Scan Batch Barcode']);
+    }
 
-        if (!$ids) return redirect()->to('part-stock/labels')->with('error', 'No batches selected');
+    public function lookupBatch()
+    {
+        $db = \Config\Database::connect();
+        $q  = trim($this->request->getGet('q') ?? '');
+        if (!$q) return $this->response->setJSON(['error' => 'No batch number provided']);
 
-        $placeholders = implode(',', array_fill(0, count($ids), '?'));
-        $batches = $db->query("SELECT pb.*, p.name as part_name FROM part_batch pb LEFT JOIN part p ON p.id = pb.part_id WHERE pb.id IN ($placeholders)", $ids)->getResultArray();
+        $batch = $db->query('SELECT id FROM part_batch WHERE batch_number = ?', [$q])->getRowArray();
+        if (!$batch) return $this->response->setJSON(['error' => 'Not found']);
 
-        return view('part_batch/print_labels', [
-            'title'   => 'Print Batch Labels',
-            'batches' => $batches,
-            'paper'   => $paper,
-            'rows'    => $rows,
-            'cols'    => $cols,
+        return $this->response->setJSON(['id' => $batch['id']]);
+    }
+
+    public function serialSettings()
+    {
+        $db     = \Config\Database::connect();
+        $config = $db->query('SELECT * FROM batch_serial_config WHERE id = 1')->getRowArray();
+        $next   = ($config['prefix'] ?? 'A') . str_pad(($config['last_number'] ?? 0) + 1, 4, '0', STR_PAD_LEFT);
+
+        return view('part_batch/serial_settings', [
+            'title'  => 'Batch Serial Settings',
+            'config' => $config,
+            'next'   => $next,
         ]);
     }
 
-    public function qrImage($batchId)
+    public function saveSerialSettings()
     {
-        $db    = \Config\Database::connect();
-        $batch = $db->query('SELECT * FROM part_batch WHERE id = ?', [$batchId])->getRowArray();
-        if (!$batch) return $this->response->setStatusCode(404);
+        $db         = \Config\Database::connect();
+        $prefix     = strtoupper(trim($this->request->getPost('prefix') ?? ''));
+        $lastNumber = (int)$this->request->getPost('last_number');
+        $maxNumber  = (int)$this->request->getPost('max_number');
 
-        $url = base_url('part-stock/batch/' . $batchId);
-        require_once ROOTPATH . 'vendor/autoload.php';
+        if (strlen($prefix) !== 1 || $prefix < 'A' || $prefix > 'Z') {
+            return redirect()->to('part-stock/serial-settings')->with('error', 'Prefix must be a single letter A-Z.');
+        }
+        if ($maxNumber < 1 || $maxNumber > 9999) {
+            return redirect()->to('part-stock/serial-settings')->with('error', 'Max number must be between 1 and 9999.');
+        }
+        if ($lastNumber < 0 || $lastNumber >= $maxNumber) {
+            return redirect()->to('part-stock/serial-settings')->with('error', 'Last number must be between 0 and ' . ($maxNumber - 1) . '.');
+        }
 
-        $qr = \Endroid\QrCode\Builder\Builder::create()
-            ->writer(new \Endroid\QrCode\Writer\PngWriter())
-            ->data($url)
-            ->size(200)
-            ->margin(6)
-            ->build();
+        $db->query('UPDATE batch_serial_config SET prefix = ?, last_number = ?, max_number = ?, updated_at = NOW() WHERE id = 1', [$prefix, $lastNumber, $maxNumber]);
 
-        return $this->response->setContentType('image/png')->setBody($qr->getString());
-    }
-
-    public function scan()
-    {
-        return view('part_batch/scan', ['title' => 'Scan Batch QR']);
+        return redirect()->to('part-stock/serial-settings')->with('success', 'Serial settings saved.');
     }
 }
