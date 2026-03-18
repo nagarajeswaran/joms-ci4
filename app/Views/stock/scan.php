@@ -1,14 +1,14 @@
 <?= $this->extend('layouts/main') ?>
 <?= $this->section('content') ?>
 <div class="d-flex justify-content-between align-items-center mb-3">
-    <h5><i class="bi bi-qr-code-scan"></i> Scan — Sale / Deduct Stock</h5>
+    <h5><i class="bi bi-qr-code-scan"></i> Scan Ã¢â‚¬â€ Sale / Deduct Stock</h5>
     <a href="<?= base_url('stock') ?>" class="btn btn-secondary btn-sm"><i class="bi bi-arrow-left"></i> Back</a>
 </div>
 
 <div class="position-fixed top-0 end-0 p-3" style="z-index:9999;">
     <div id="dupToast" class="toast align-items-center text-bg-warning border-0" role="alert" aria-live="assertive" data-bs-delay="2500">
         <div class="d-flex">
-            <div class="toast-body fw-semibold"><i class="bi bi-exclamation-triangle"></i> <span id="dupToastMsg">Already scanned — added again</span></div>
+            <div class="toast-body fw-semibold"><i class="bi bi-exclamation-triangle"></i> <span id="dupToastMsg">Already scanned Ã¢â‚¬â€ added again</span></div>
             <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
         </div>
     </div>
@@ -115,7 +115,7 @@
 <?= $this->section('scripts') ?>
 <script src="https://cdn.jsdelivr.net/npm/@zxing/browser@0.1.4/umd/index.min.js"></script>
 <script>
-var html5QrCode = null;
+var zxingControls = null;
 var scanList = [];
 var lastScannedText = '';
 var lastScannedTime = 0;
