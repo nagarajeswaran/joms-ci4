@@ -34,28 +34,26 @@
 </div>
 </div>
 
-<template id="rowTpl">
-<div class="d-flex gap-2 mb-2 item-row">
-    <select name="items[IDX][part_id]" class="form-select form-select-sm">
-        <option value="">-- Select Part --</option>
-        <?php foreach ($parts as $p): ?>
-        <option value="<?= $p['id'] ?>"><?= esc($p['name']) ?></option>
-        <?php endforeach; ?>
-    </select>
-    <input type="number" name="items[IDX][qty]" class="form-control form-control-sm" placeholder="Qty" min="1" value="1" style="width:80px">
-    <button type="button" class="btn btn-outline-danger btn-sm" onclick="this.closest('.item-row').remove()"><i class="bi bi-x"></i></button>
-</div>
-</template>
+
 <?= $this->endSection() ?>
 <?= $this->section('scripts') ?>
 <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
 <script>
 var rowIdx = 0;
 var generatedBatches = [];
+var partOptions = <?= json_encode(array_reduce($parts, function($carry, $p) {
+    return $carry . '<option value="' . $p['id'] . '">' . htmlspecialchars($p['name'], ENT_QUOTES) . '</option>';
+}, '')) ?>;
 
 function addRow() {
-    var tpl = document.getElementById('rowTpl').innerHTML.replace(/IDX/g, rowIdx++);
-    document.getElementById('itemRows').insertAdjacentHTML('beforeend', tpl);
+    var opts = '<option value="">-- No Part --</option>' + partOptions;
+    var html = '<div class="d-flex gap-2 mb-2 item-row">'
+        + '<select name="items[' + rowIdx + '][part_id]" class="form-select form-select-sm">' + opts + '</select>'
+        + '<input type="number" name="items[' + rowIdx + '][qty]" class="form-control form-control-sm" placeholder="Qty" min="1" value="1" style="width:80px">'
+        + '<button type="button" class="btn btn-outline-danger btn-sm" onclick="this.closest(\'.item-row\').remove()"><i class="bi bi-x"></i></button>'
+        + '</div>';
+    document.getElementById('itemRows').insertAdjacentHTML('beforeend', html);
+    rowIdx++;
 }
 addRow();
 
@@ -64,15 +62,15 @@ function getItems() {
     var items = [];
     rows.forEach(function(row) {
         var sel = row.querySelector('select');
-        var qty = row.querySelector('input[type=number]');
-        if (sel.value) items.push({part_id: sel.value, qty: qty.value});
+        var qty = parseInt(row.querySelector('input[type=number]').value) || 1;
+        if (qty > 0) items.push({part_id: sel.value || '', qty: qty});
     });
     return items;
 }
 
 function generateBatches() {
     var items = getItems();
-    if (!items.length) { alert('Add at least one part'); return; }
+    if (!items.length) { alert('Add at least one row with qty > 0'); return; }
     var formData = new FormData();
     formData.append('<?= csrf_token() ?>', '<?= csrf_hash() ?>');
     items.forEach(function(item, i) {
@@ -146,7 +144,7 @@ function printLabels() {
         pages.push('<div class="label-page">' + cards + '</div>');
     }
 
-    var hint = '<div class="print-hint" style="font-family:Arial;font-size:11px;background:#fff3cd;padding:6px 10px;border-bottom:1px solid #ffc107;"><b>Print tip:</b> Set Margins = <b>None</b> and Scale = <b>100%</b> in print dialog. <a href="javascript:void(0)" onclick="this.parentElement.style.display='none'">Dismiss</a></div>';
+    var hint = '<div class="print-hint" style="font-family:Arial;font-size:11px;background:#fff3cd;padding:6px 10px;border-bottom:1px solid #ffc107;"><b>Print tip:</b> Set Margins = <b>None</b> and Scale = <b>100%</b> in print dialog. <a href="javascript:void(0)" onclick="this.parentElement.style.display=\'none\'">Dismiss</a></div>';
     var w = window.open('', '_blank', 'width=900,height=700');
     w.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Batch Labels</title>'
         + '<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"><\/script>'

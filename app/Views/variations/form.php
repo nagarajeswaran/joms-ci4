@@ -5,15 +5,20 @@
         <form action="<?= base_url('variations/' . (isset($item) ? 'update/' . $item['id'] : 'store')) ?>" method="post">
             <?= csrf_field() ?>
             <div class="row">
-                <div class="col-md-4 mb-3">
+                <div class="col-md-3 mb-3">
                     <label class="form-label">Group Name</label>
                     <input type="text" class="form-control" name="group_name" value="<?= esc($item['group_name'] ?? '') ?>" required>
                 </div>
-                <div class="col-md-4 mb-3">
+                <div class="col-md-3 mb-3">
+                    <label class="form-label">Group Tamil Name</label>
+                    <input type="text" class="form-control" name="group_tamil_name" value="<?= esc($item['group_tamil_name'] ?? '') ?>">
+                    <div class="form-text">Saved value applies to all variations in this group automatically.</div>
+                </div>
+                <div class="col-md-3 mb-3">
                     <label class="form-label">Name</label>
                     <input type="text" class="form-control" name="name" value="<?= esc($item['name'] ?? '') ?>" required>
                 </div>
-                <div class="col-md-4 mb-3">
+                <div class="col-md-3 mb-3">
                     <label class="form-label">Size</label>
                     <input type="text" class="form-control" name="size" value="<?= esc($item['size'] ?? '') ?>">
                 </div>

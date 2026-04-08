@@ -334,8 +334,8 @@ document.getElementById('btnGenerate').addEventListener('click', function() {
                     '<div style="flex:0 0 ' + sideW + 'px;display:flex;align-items:center;justify-content:center;font-size:' + fsNum + 'px;font-weight:900;font-family:monospace;text-align:center;">#' + lbl.qr_number + '</div>'
                     + '<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:0;overflow:hidden;">'
                     + '<div style="font-size:' + (fsProd+2) + 'px;font-weight:bold;text-transform:uppercase;text-align:center;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;max-width:100%;">' + lbl.product_label + '</div>'
-                    + (patLine ? '<div style="font-size:' + fsPat + 'px;color:#555;font-style:italic;text-align:center;">' + patLine + '</div>' : '')
                     + '<div style="display:flex;align-items:center;justify-content:center;"><svg class="bc" data-val="' + lbl.qr_number + '" style="display:block;"></svg></div>'
+                    + (patLine ? '<div style="font-size:' + (fsProd+2) + 'px;color:#555;font-style:italic;text-align:center;">' + patLine + '</div>' : '')
                     + '</div>'
                     + '<div style="flex:0 0 ' + sideW + 'px;display:flex;align-items:center;justify-content:center;font-size:' + fsSz + 'px;font-weight:900;text-align:center;word-break:break-word;text-transform:uppercase;">' + sizeTxt + '</div>';
 
@@ -402,7 +402,7 @@ function printLabels() {
         + '.lc-sz{font-size:' + fsSz + 'pt;font-weight:900;line-height:1;text-align:center;word-break:break-word;text-transform:uppercase}'
         + '.lc-center{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:0;overflow:hidden}'
         + '.lc-name{font-size:' + fsProd + 'pt;font-weight:bold;text-align:center;text-transform:uppercase;line-height:1.1;overflow:hidden;max-width:100%}'
-        + '.lc-pat{font-size:' + fsPat + 'pt;color:#444;text-align:center;line-height:1;overflow:hidden;max-width:100%}'
+        + '.lc-pat{font-size:' + fsProd + 'pt;font-style:italic;color:#444;text-align:center;line-height:1;overflow:hidden;max-width:100%}'
         + '.lc-qr{width:100%}';
     css += '.lc-qr svg{display:block;width:' + bcWmm.toFixed(1) + 'mm;height:auto;max-width:100%}';
 
@@ -416,8 +416,8 @@ function printLabels() {
                 + '<div class="lc-side"><div class="lc-num">#' + (dd.num||'') + '</div></div>'
                 + '<div class="lc-center">'
                 + '<div class="lc-name">' + (dd.prod||'') + '</div>'
-                + (dd.pat ? '<div class="lc-pat">' + dd.pat + '</div>' : '')
                 + '<div class="lc-qr"><svg class="bc" data-val="' + (dd.num||'') + '"></svg></div>'
+                + (dd.pat ? '<div class="lc-pat">' + dd.pat + '</div>' : '')
                 + '</div>'
                 + '<div class="lc-side"><div class="lc-sz">' + (dd.sz||'') + '</div></div>'
                 + '</div>';

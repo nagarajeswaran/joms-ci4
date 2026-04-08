@@ -28,11 +28,17 @@ class Variations extends BaseController
 
     public function store()
     {
+        $groupName  = $this->request->getPost('group_name');
+        $groupTamil = $this->request->getPost('group_tamil_name');
         $this->model->insert([
-            'group_name' => $this->request->getPost('group_name'),
-            'name' => $this->request->getPost('name'),
-            'size' => $this->request->getPost('size'),
+            'group_name'       => $groupName,
+            'group_tamil_name' => $groupTamil,
+            'name'             => $this->request->getPost('name'),
+            'size'             => $this->request->getPost('size'),
         ]);
+        // Sync Tamil name across all variations in the same group
+        $db = \Config\Database::connect();
+        $db->query('UPDATE variation SET group_tamil_name = ? WHERE group_name = ?', [$groupTamil, $groupName]);
         return redirect()->to('variations')->with('success', 'Variation added successfully');
     }
 
@@ -45,11 +51,17 @@ class Variations extends BaseController
 
     public function update($id)
     {
+        $groupName  = $this->request->getPost('group_name');
+        $groupTamil = $this->request->getPost('group_tamil_name');
         $this->model->update($id, [
-            'group_name' => $this->request->getPost('group_name'),
-            'name' => $this->request->getPost('name'),
-            'size' => $this->request->getPost('size'),
+            'group_name'       => $groupName,
+            'group_tamil_name' => $groupTamil,
+            'name'             => $this->request->getPost('name'),
+            'size'             => $this->request->getPost('size'),
         ]);
+        // Sync Tamil name across all variations in the same group
+        $db = \Config\Database::connect();
+        $db->query('UPDATE variation SET group_tamil_name = ? WHERE group_name = ?', [$groupTamil, $groupName]);
         return redirect()->to('variations')->with('success', 'Variation updated successfully');
     }
 

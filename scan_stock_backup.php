@@ -1,14 +1,14 @@
 <?= $this->extend('layouts/main') ?>
 <?= $this->section('content') ?>
 <div class="d-flex justify-content-between align-items-center mb-3">
-    <h5><i class="bi bi-qr-code-scan"></i> Scan &mdash; Sale / Deduct Stock</h5>
+    <h5><i class="bi bi-qr-code-scan"></i> Scan — Sale / Deduct Stock</h5>
     <a href="<?= base_url('stock') ?>" class="btn btn-secondary btn-sm"><i class="bi bi-arrow-left"></i> Back</a>
 </div>
 
 <div class="position-fixed top-0 end-0 p-3" style="z-index:9999;">
     <div id="dupToast" class="toast align-items-center text-bg-warning border-0" role="alert" aria-live="assertive" data-bs-delay="2500">
         <div class="d-flex">
-            <div class="toast-body fw-semibold"><i class="bi bi-exclamation-triangle"></i> <span id="dupToastMsg">Already scanned  -  added again</span></div>
+            <div class="toast-body fw-semibold"><i class="bi bi-exclamation-triangle"></i> <span id="dupToastMsg">Already scanned — added again</span></div>
             <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
         </div>
     </div>
@@ -115,7 +115,7 @@
 <?= $this->section('scripts') ?>
 <script src="https://cdn.jsdelivr.net/npm/@zxing/browser@0.1.4/umd/index.min.js"></script>
 <script>
-var zxingControls = null;
+var html5QrCode = null;
 var scanList = [];
 var lastScannedText = '';
 var lastScannedTime = 0;
@@ -158,7 +158,7 @@ function addToScanList(d) {
         pattern_id:     d.pattern.id,
         variation_id:   d.variation.id,
         product_name:   d.product.name,
-        pattern_name:   parseInt(d.pattern.is_default) === 1 ? 'Default' : d.pattern.name,
+        pattern_name:   d.pattern.is_default ? 'Default' : d.pattern.name,
         variation_name: d.variation.name + (d.variation.size ? ' ' + d.variation.size + '"' : ''),
         qty: 1
     });
@@ -248,90 +248,28 @@ document.getElementById('btnSubmitSale').addEventListener('click', function() {
 });
 
 document.getElementById('btnStartScan').addEventListener('click', function() {
-    var readerDiv = document.getElementById('qr-reader');
-    readerDiv.innerHTML = '<video id="zxingVideo" autoplay playsinline muted style="width:100%;min-height:220px;background:#111;border-radius:6px;"></video><div id="camStatus" class="text-center text-info small mt-1 fw-semibold">Step 1: Requesting camera...</div>';
-    document.getElementById('btnStartScan').style.display = 'none';
+    html5QrCode = new Html5Qrcode("qr-reader");
+    html5QrCode.start(
+        { facingMode: "environment" },
+        { fps: 10, qrbox: { width: 220, height: 220 } },
+        function(decodedText) {
+            var now = Date.now();
+            if (decodedText === lastScannedText && (now - lastScannedTime) < 2000) return;
+            lastScannedText = decodedText;
+            lastScannedTime = now;
+            lookupQR(decodedText);
+        }
+    );
+    this.style.display = 'none';
     document.getElementById('btnStopScan').style.display = '';
-    startCameraScanner();
 });
 
-function startCameraScanner() {
-    var msgEl = document.getElementById('scanMsg');
-    function setStatus(s) { var el=document.getElementById('camStatus'); if(el) el.textContent=s; }
-
-    navigator.mediaDevices.getUserMedia({ video: { facingMode:'environment' } })
-    .then(function(stream) {
-        setStatus('Step 2: Got stream, attaching to video...');
-        var video = document.getElementById('zxingVideo');
-        if (!video) { setStatus('ERROR: video element missing!'); return; }
-        video.srcObject = stream;
-        zxingControls = stream;
-        video.addEventListener('loadedmetadata', function() {
-            setStatus('Step 3: Video ready, playing...');
-            video.play().then(function() {
-                setStatus('Step 4: Camera active - point at barcode');
-                startDecoding(video);
-            }).catch(function(e){ setStatus('Play error: '+e.message); });
-        });
-        video.addEventListener('error', function(e){ setStatus('Video error: '+e.message); });
-        setTimeout(function(){
-            if(document.getElementById('camStatus') && document.getElementById('camStatus').textContent.indexOf('Step 2')>=0){
-                setStatus('Timeout: video never loaded. Try allowing camera in browser settings.');
-            }
-        }, 5000);
-    }).catch(function(err) {
-        document.getElementById('scanMsg').innerHTML = '<div class="alert alert-danger">Camera denied: ' + escHtml(err.name+': '+err.message) + '</div>';
-        document.getElementById('qr-reader').innerHTML = '';
-        document.getElementById('btnStartScan').style.display = '';
-        document.getElementById('btnStopScan').style.display = 'none';
-    });
-}
-
-function startDecoding(video) {
-    var setStatus = function(s){ var el=document.getElementById('camStatus'); if(el) el.textContent=s; };
-    if ('BarcodeDetector' in window) {
-        setStatus('Camera active (BarcodeDetector) - point at barcode');
-        var detector = new BarcodeDetector({ formats:['code_128','qr_code','ean_13','ean_8','code_39'] });
-        function tick() {
-            if (!zxingControls) return;
-            detector.detect(video).then(function(codes) {
-                if (codes.length > 0) {
-                    var now=Date.now(); var text=codes[0].rawValue;
-                    if (text===lastScannedText && (now-lastScannedTime)<2000) { requestAnimationFrame(tick); return; }
-                    lastScannedText=text; lastScannedTime=now;
-                    setStatus('Found: '+text);
-                    lookupQR(text);
-                }
-            }).catch(function(){});
-            requestAnimationFrame(tick);
-        }
-        tick();
-    } else {
-        setStatus('Camera active (ZXing) - point at barcode');
-        var reader = new ZXingBrowser.BrowserMultiFormatReader();
-        reader.decodeFromStream(video.srcObject, video, function(result,err){
-            if(result){
-                var now=Date.now(); var text=result.getText();
-                if(text===lastScannedText&&(now-lastScannedTime)<2000) return;
-                lastScannedText=text; lastScannedTime=now;
-                setStatus('Found: '+text);
-                lookupQR(text);
-            }
-        });
-    }
-}
-
 document.getElementById('btnStopScan').addEventListener('click', function() {
-    if (zxingControls && zxingControls instanceof MediaStream) {
-        zxingControls.getTracks().forEach(function(t){t.stop();});
-    } else if (zxingControls && zxingControls.stop) {
-        zxingControls.stop();
-    }
-    zxingControls = null;
-    document.getElementById('qr-reader').innerHTML = '';
+    if (html5QrCode) { html5QrCode.stop(); html5QrCode = null; }
     this.style.display = 'none';
     document.getElementById('btnStartScan').style.display = '';
 });
+
 document.getElementById('btnManual').addEventListener('click', function() {
     lookupQR(document.getElementById('manualQr').value);
 });

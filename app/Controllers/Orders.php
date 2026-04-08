@@ -102,6 +102,37 @@ class Orders extends BaseController
         return array_values($bom);
     }
 
+
+    // Recalculate and persist estimated_weight for an order
+    private function _recalcOrderWeight(int $orderId): void
+    {
+        $items = $this->db->query(
+            'SELECT oi.id, oi.product_id, oi.pattern_id FROM order_items oi WHERE oi.order_id = ?',
+            [$orderId]
+        )->getResultArray();
+
+        $grand = 0.0;
+        foreach ($items as $item) {
+            $wmap = $this->_computeWeightMap(
+                $item['product_id'],
+                $item['pattern_id'],
+                null,
+                $orderId
+            );
+            $qtyRows = $this->db->query(
+                'SELECT variation_id, quantity FROM order_item_qty WHERE order_item_id = ?',
+                [$item['id']]
+            )->getResultArray();
+            foreach ($qtyRows as $q) {
+                $vid = $q['variation_id'];
+                $qty = (float)$q['quantity'];
+                $wpp = $wmap[$vid] ?? 0.0;
+                $grand += $qty * $wpp;
+            }
+        }
+
+        $this->db->table('orders')->where('id', $orderId)->update(['estimated_weight' => round($grand, 4)]);
+    }
     // Returns weight_per_pcs[variation_id] for a product+pattern combination
     private function _computeWeightMap($productId, $patternId, $mainPartId, $orderId = null)
     {
@@ -213,7 +244,7 @@ class Orders extends BaseController
         return $weightMap;
     }
 
-    private function _calculatePartRequirements($orderId, $setupOverride = [])
+    private function _calculatePartRequirements($orderId, $setupOverride = [], $filterItemId = null)
     {
         $kanniMap = [];
         if (!empty($setupOverride)) {
@@ -247,12 +278,13 @@ class Orders extends BaseController
         $aggregated = [];
 
         foreach ($items as $item) {
+            if ($filterItemId !== null && (int)$item['id'] !== (int)$filterItemId) continue;
             $factor   = (float)($item['multiplication_factor'] ?? 1);
             $claspSize = (float)($item['clasp_size'] ?? 0);
 
             $ptVarIds = [];
             if (!empty($item['pt_variations'])) {
-                $ptVarIds = array_filter(array_map('trim', explode(',', $item['pt_variations'])));
+                $ptVarIds = array_values(array_filter(array_map('trim', explode(',', $item['pt_variations']))));
             }
             if (empty($ptVarIds)) continue;
 
@@ -335,6 +367,19 @@ class Orders extends BaseController
             }
 
             $cbomRows = $this->db->query('SELECT * FROM product_customize_bill_of_material WHERE product_id = ?', [$item['product_id']])->getResultArray();
+
+            // Build cbomOverride map from pattern CBOM changes: [part_id][variation_id] = override row
+            $cbomOverride = [];
+            if (!empty($item['pattern_id'])) {
+                $patCbomChanges = $this->db->query(
+                    'SELECT * FROM product_pattern_cbom_change WHERE product_pattern_id = ?',
+                    [$item['pattern_id']]
+                )->getResultArray();
+                foreach ($patCbomChanges as $pcc) {
+                    $cbomOverride[$pcc['part_id']][$pcc['variation_id']] = $pcc;
+                }
+            }
+
             foreach ($cbomRows as $cbom) {
                 $partId  = $cbom['part_id'];
                 $podiId  = $cbom['podi_id'] ?? null;
@@ -342,7 +387,24 @@ class Orders extends BaseController
                 $partReq = 0;
                 $podiReq = 0;
                 foreach ($cbomQtys as $cq) {
+                    $vid = (int)$cq['variation_id'];
                     $orderQty = $qtyMap[$cq['variation_id']] ?? 0;
+
+                    // Apply pattern CBOM override for this part+variation
+                    if (isset($cbomOverride[$partId][$vid])) {
+                        $ov = $cbomOverride[$partId][$vid];
+                        if ($ov['action'] === 'remove') continue; // skip this part for this size
+                        if ($ov['action'] === 'replace') {
+                            // Replace: skip original, add replacement below
+                            // (handled in the add-overrides pass after this loop)
+                            continue;
+                        }
+                        // action = add: override the quantity
+                        $cq['part_quantity']  = (float)$ov['quantity'];
+                        $cq['podi_id']        = $ov['podi_id'] ?? $cq['podi_id'];
+                        $cq['podi_quantity']  = isset($ov['podi_qty']) ? (float)$ov['podi_qty'] : ($cq['podi_quantity'] ?? 0);
+                    }
+
                     $partReq += $orderQty * (float)($cq['part_quantity'] ?? 0);
                     $podiReq += $orderQty * (float)($cq['podi_quantity'] ?? 0);
                 }
@@ -356,6 +418,28 @@ class Orders extends BaseController
                     $aggregated[$partId]['podi_pcs'] += $podiReq;
                 }
             }
+
+            // Apply pattern CBOM overrides for ADD and REPLACE (new entries not in base CBOM)
+            foreach ($cbomOverride as $ovPartId => $varOverrides) {
+                foreach ($varOverrides as $ovVarId => $ov) {
+                    if (!isset($qtyMap[$ovVarId])) continue;
+                    $targetPartId = $ov['action'] === 'replace' ? (int)$ov['replace_part_id'] : $ovPartId;
+                    if (!$targetPartId) continue;
+                    if ($ov['action'] === 'remove') continue; // already handled above
+                    $ovQty = (float)$ov['quantity'];
+                    if ($ovQty <= 0) continue;
+                    $orderQty = $qtyMap[$ovVarId] ?? 0;
+                    $partName = $this->db->query('SELECT name FROM part WHERE id = ?', [$targetPartId])->getRowArray()['name'] ?? "Part #{$targetPartId}";
+                    if (!isset($aggregated[$targetPartId])) {
+                        $aggregated[$targetPartId] = ['part_pcs' => 0, 'podi_id' => null, 'podi_pcs' => 0];
+                    }
+                    $aggregated[$targetPartId]['part_pcs'] += $orderQty * $ovQty;
+                    if (!empty($ov['podi_id'])) {
+                        $aggregated[$targetPartId]['podi_id']   = $ov['podi_id'];
+                        $aggregated[$targetPartId]['podi_pcs'] += $orderQty * (float)($ov['podi_qty'] ?? 0);
+                    }
+                }
+            }
         }
 
         return $aggregated;
@@ -366,6 +450,7 @@ class Orders extends BaseController
     public function index()
     {
         $statusFilter = $this->request->getGet('status') ?? '';
+        $clientFilter = (int)($this->request->getGet('client_id') ?? 0);
         $sql    = 'SELECT o.*, c.name as client_name, COUNT(oi.id) as item_count
                    FROM orders o
                    LEFT JOIN client c ON c.id = o.client_id
@@ -373,12 +458,15 @@ class Orders extends BaseController
                    WHERE 1=1';
         $params = [];
         if ($statusFilter) { $sql .= ' AND o.status = ?'; $params[] = $statusFilter; }
+        if ($clientFilter) { $sql .= ' AND o.client_id = ?'; $params[] = $clientFilter; }
         $sql .= ' GROUP BY o.id ORDER BY o.created_at DESC';
 
         return view('orders/index', [
             'title'        => 'Orders',
             'items'        => $this->db->query($sql, $params)->getResultArray(),
             'statusFilter' => $statusFilter,
+            'clientFilter' => $clientFilter,
+            'clients'      => $this->db->query('SELECT id, name FROM client ORDER BY name')->getResultArray(),
         ]);
     }
 
@@ -412,7 +500,7 @@ class Orders extends BaseController
     {
         $order = $this->_getOrder($id);
         if (!$order) return redirect()->to('orders')->with('error', 'Not found');
-        if ($order['status'] !== 'draft') return redirect()->to('orders/view/' . $id)->with('error', 'Only draft orders can be edited');
+        if ($order['status'] !== 'draft') return redirect()->to('orders/view/' . $id)->with('info', 'Only the order header (title/client/notes) can be edited for Draft orders. To change products or quantities, use the panels below.');
 
         return view('orders/form', [
             'title'   => 'Edit Order',
@@ -565,6 +653,7 @@ class Orders extends BaseController
             }
         }
 
+        $this->_recalcOrderWeight($orderId);
         return redirect()->to('orders/view/' . $orderId)->with('success', count($products) . ' product(s) added to order');
     }
 
@@ -583,10 +672,39 @@ class Orders extends BaseController
         $this->db->query('DELETE FROM order_item_qty WHERE order_item_id = ?', [$itemId]);
         $this->db->query('DELETE FROM order_items WHERE id = ?', [$itemId]);
 
+        $this->_recalcOrderWeight((int)$item['order_id']);
         return redirect()->to('orders/view/' . $item['order_id'])->with('success', 'Item removed');
     }
 
     // ========== SAVE ITEM QTY ==========
+
+    public function saveItemQtyAjax($itemId)
+    {
+        $item = $this->db->query('SELECT * FROM order_items WHERE id = ?', [$itemId])->getRowArray();
+        if (!$item) return $this->response->setJSON(['success' => false, 'error' => 'Not found']);
+
+        $order = $this->_getOrder($item['order_id']);
+        if (!$order || !in_array($order['status'], ['draft', 'confirmed'])) {
+            return $this->response->setJSON(['success' => false, 'error' => 'Not editable']);
+        }
+
+        $d = $this->request->getPost();
+        $this->db->table('order_items')->where('id', $itemId)->update([
+            'pattern_id' => $d['pattern_id'] ?: null,
+            'stamp_id'   => $d['stamp_id'] ?: null,
+        ]);
+        $this->db->query('DELETE FROM order_item_qty WHERE order_item_id = ?', [$itemId]);
+        foreach (($d['qty'] ?? []) as $varId => $qty) {
+            if ((int)$qty > 0) {
+                $this->db->table('order_item_qty')->insert([
+                    'order_item_id' => $itemId,
+                    'variation_id'  => (int)$varId,
+                    'quantity'      => (int)$qty,
+                ]);
+            }
+        }
+        return $this->response->setJSON(['success' => true]);
+    }
 
     public function saveItemQty($itemId)
     {
@@ -617,6 +735,7 @@ class Orders extends BaseController
             }
         }
 
+        $this->_recalcOrderWeight((int)$item['order_id']);
         return redirect()->to('orders/view/' . $item['order_id'])->with('success', 'Quantities saved');
     }
 
@@ -767,12 +886,13 @@ class Orders extends BaseController
 
     // ========== CALCULATION DETAIL (AJAX) ==========
 
-    public function partCalcDetail($orderId, $partId)
+    public function partCalcDetail($orderId, $partId, $itemId = 0)
     {
         $order = $this->_getOrder($orderId);
         if (!$order) return $this->response->setJSON(['error' => 'Order not found']);
 
         $partId = (int)$partId;
+        $itemId = (int)$itemId;
 
         $setupRows = $this->db->query('SELECT part_id, kanni_per_inch, weight_per_kanni FROM order_main_part_setup WHERE order_id = ?', [$orderId])->getResultArray();
         $mainSetup = [];
@@ -802,13 +922,14 @@ class Orders extends BaseController
         $blocks = [];
 
         foreach ($items as $item) {
+            if ($itemId > 0 && (int)$item['id'] !== $itemId) continue;
             $factor       = (float)($item['multiplication_factor'] ?? 1);
             $claspSize    = (float)($item['clasp_size'] ?? 0);
             $productLabel = $item['product_name'] . ($item['pattern_name'] ? ' â€” ' . $item['pattern_name'] : '');
 
             $ptVarIds = [];
             if (!empty($item['pt_variations'])) {
-                $ptVarIds = array_filter(array_map('trim', explode(',', $item['pt_variations'])));
+                $ptVarIds = array_values(array_filter(array_map('trim', explode(',', $item['pt_variations']))));
             }
 
             $qtyRows = $this->db->query('SELECT variation_id, quantity FROM order_item_qty WHERE order_item_id = ?', [$item['id']])->getResultArray();
@@ -1112,7 +1233,7 @@ class Orders extends BaseController
                 return strcmp($parts[$a]['name'] ?? '', $parts[$b]['name'] ?? '');
             });
 
-            $podiIds = array_filter(array_unique(array_column($combined, 'podi_id')));
+            $podiIds = array_values(array_filter(array_unique(array_column($combined, 'podi_id'))));
             if ($podiIds) {
                 $ph3 = implode(',', array_fill(0, count($podiIds), '?'));
                 $poRows = $this->db->query("SELECT id, name, weight FROM podi WHERE id IN ($ph3)", array_values($podiIds))->getResultArray();
@@ -1154,6 +1275,137 @@ class Orders extends BaseController
             'mainSetup'     => $mainSetupForView,
             'totalProducts' => $totalProducts,
         ]);
+    }
+
+
+    public function productPartRequirements($orderId, $itemId)
+    {
+        $order = $this->_getOrder($orderId);
+        if (!$order) return redirect()->to('orders')->with('error', 'Order not found');
+
+        $item = $this->db->query("
+            SELECT oi.*, p.name as product_name, p.sku,
+                   COALESCE(pn.name, 'Default') as pattern_name
+            FROM order_items oi
+            JOIN product p ON p.id = oi.product_id
+            LEFT JOIN product_pattern pp ON pp.id = oi.pattern_id
+            LEFT JOIN pattern_name pn ON pn.id = pp.pattern_name_id
+            WHERE oi.id = ? AND oi.order_id = ?
+        ", [$itemId, $orderId])->getRowArray();
+        if (!$item) return redirect()->to('orders/view/' . $orderId)->with('error', 'Item not found');
+
+        $aggregated = $this->_calculatePartRequirements($orderId, [], (int)$itemId);
+
+        $mainSetup = [];
+        $setupRows = $this->db->query('SELECT part_id, kanni_per_inch, weight_per_kanni FROM order_main_part_setup WHERE order_id = ?', [$orderId])->getResultArray();
+        foreach ($setupRows as $s) $mainSetup[$s['part_id']] = $s;
+
+        $partIds = array_values(array_keys($aggregated));
+        $parts = $podies = [];
+        if ($partIds) {
+            $ph = implode(',', array_fill(0, count($partIds), '?'));
+            $pRows = $this->db->query("SELECT pa.id, pa.name, pa.weight, pa.gatti, pa.is_main_part, d.name as dept_name FROM part pa LEFT JOIN department d ON d.id = pa.department_id WHERE pa.id IN ($ph)", $partIds)->getResultArray();
+            foreach ($pRows as $p) $parts[$p['id']] = $p;
+            $podiIds = array_values(array_values(array_filter(array_unique(array_column($aggregated, 'podi_id')))));
+            if ($podiIds) {
+                $ph2 = implode(',', array_fill(0, count($podiIds), '?'));
+                $podiRows = $this->db->query("SELECT * FROM podi WHERE id IN ($ph2)", $podiIds)->getResultArray();
+                foreach ($podiRows as $po) $podies[$po['id']] = $po;
+            }
+            uksort($aggregated, function ($a, $b) use ($parts) {
+                $dA = $parts[$a]['dept_name'] ?? 'zzz';
+                $dB = $parts[$b]['dept_name'] ?? 'zzz';
+                if ($dA !== $dB) return strcmp($dA, $dB);
+                return strcmp($parts[$a]['name'] ?? '', $parts[$b]['name'] ?? '');
+            });
+        }
+
+        return view('orders/part_requirements_single', [
+            'title'      => 'Part Req: ' . ($item['product_name'] ?? ''),
+            'order'      => $order,
+            'item'       => $item,
+            'aggregated' => $aggregated,
+            'parts'      => $parts,
+            'podies'     => $podies,
+            'mainSetup'  => $mainSetup,
+        ]);
+    }
+
+    public function productPartRequirementsPdf($orderId, $itemId)
+    {
+        $order = $this->_getOrder($orderId);
+        if (!$order) return redirect()->to('orders')->with('error', 'Order not found');
+
+        $item = $this->db->query("
+            SELECT oi.*, p.name as product_name, p.sku,
+                   COALESCE(pn.name, 'Default') as pattern_name
+            FROM order_items oi
+            JOIN product p ON p.id = oi.product_id
+            LEFT JOIN product_pattern pp ON pp.id = oi.pattern_id
+            LEFT JOIN pattern_name pn ON pn.id = pp.pattern_name_id
+            WHERE oi.id = ? AND oi.order_id = ?
+        ", [$itemId, $orderId])->getRowArray();
+        if (!$item) return redirect()->to('orders/view/' . $orderId)->with('error', 'Item not found');
+
+        $aggregated = $this->_calculatePartRequirements($orderId, [], (int)$itemId);
+
+        $mainSetup = [];
+        $setupRows = $this->db->query('SELECT part_id, kanni_per_inch, weight_per_kanni FROM order_main_part_setup WHERE order_id = ?', [$orderId])->getResultArray();
+        foreach ($setupRows as $s) $mainSetup[$s['part_id']] = $s;
+
+        $partIds = array_keys($aggregated);
+        $parts = $podies = [];
+        if ($partIds) {
+            $ph = implode(',', array_fill(0, count($partIds), '?'));
+            $pRows = $this->db->query("SELECT pa.id, pa.name, pa.tamil_name, pa.weight, pa.gatti, pa.is_main_part, d.name as dept_name FROM part pa LEFT JOIN department d ON d.id = pa.department_id WHERE pa.id IN ($ph)", $partIds)->getResultArray();
+            foreach ($pRows as $p) $parts[$p['id']] = $p;
+            $podiIds = array_values(array_filter(array_unique(array_column($aggregated, 'podi_id'))));
+            if ($podiIds) {
+                $ph2 = implode(',', array_fill(0, count($podiIds), '?'));
+                $podiRows = $this->db->query("SELECT * FROM podi WHERE id IN ($ph2)", $podiIds)->getResultArray();
+                foreach ($podiRows as $po) $podies[$po['id']] = $po;
+            }
+            uksort($aggregated, function ($a, $b) use ($parts) {
+                $dA = $parts[$a]['dept_name'] ?? 'zzz';
+                $dB = $parts[$b]['dept_name'] ?? 'zzz';
+                if ($dA !== $dB) return strcmp($dA, $dB);
+                return strcmp($parts[$a]['name'] ?? '', $parts[$b]['name'] ?? '');
+            });
+        }
+
+        $orderNum = $order['order_number'] ?: ('#' . $order['id']);
+        $css = 'body{font-family:latha;font-size:12px;color:#222;}h1{font-size:15px;margin:0 0 6px 0;border-bottom:2px solid #333;padding-bottom:4px;}.hdr-table{width:100%;margin-bottom:10px;font-size:12px;}.hdr-table td{padding:2px 6px;vertical-align:top;}.hdr-label{font-weight:bold;color:#555;width:80px;}table{border-collapse:collapse;width:100%;font-size:11px;margin-bottom:14px;}thead th{background:#dce8f5;padding:4px 8px;text-align:center;border:1px solid #aaa;font-weight:bold;}tbody td{padding:4px 8px;border:1px solid #ccc;}.num{text-align:right;}.dept-row td{background:#e8f0fe;font-weight:bold;font-size:11px;padding:3px 8px;}tfoot td{background:#f0f4f8;font-weight:bold;border:1px solid #aaa;padding:4px 8px;}';
+
+        $html  = '<html><head><meta charset="utf-8"><style>' . $css . '</style></head><body>';
+        $html .= '<h1>Part Requirements</h1>';
+        $html .= '<table class="hdr-table"><tr>';
+        $html .= '<td><span class="hdr-label">Order:</span> <strong>' . htmlspecialchars($orderNum) . '</strong></td>';
+        $html .= '<td><span class="hdr-label">Date:</span> ' . date('d M Y', strtotime($order['created_at'])) . '</td>';
+        $html .= '</tr><tr>';
+        $html .= '<td><span class="hdr-label">Product:</span> <strong>' . htmlspecialchars($item['product_name'] ?? '') . '</strong></td>';
+        $html .= '<td><span class="hdr-label">Pattern:</span> ' . htmlspecialchars($item['pattern_name'] ?? 'Default') . '</td>';
+        $html .= '</tr></table>';
+        $html .= '<table><thead><tr><th>#</th><th style="text-align:left;">Part Name</th><th>Total Pcs</th><th>Weight/pc (g)</th><th>Est. Weight (g)</th><th>Gatti Req (g)</th></tr></thead><tbody>';
+
+        $totalWt = 0; $totalGatti = 0; $i = 1; $currentDept = null;
+        foreach ($aggregated as $partId => $data) {
+            $part     = $parts[$partId] ?? null;
+            $tName    = trim($part['tamil_name'] ?? '');
+            $pName    = $tName !== '' ? $tName : ($part ? $part['name'] : 'Part #' . $partId);
+            $deptName = $part['dept_name'] ?? 'â';
+            $isMain   = !empty($part['is_main_part']);
+            $gattiPkg = (float)($part['gatti'] ?? 0);
+            $wpp      = ($isMain && isset($mainSetup[$partId])) ? (float)$mainSetup[$partId]['weight_per_kanni'] : (float)($part['weight'] ?? 0);
+            $pcs      = round($data['part_pcs'], 2);
+            $wt       = round($pcs * $wpp, 4);
+            $gattiReq = $gattiPkg > 0 ? round($wt * $gattiPkg / 1000, 4) : 0;
+            $totalWt += $wt; $totalGatti += $gattiReq;
+            if ($deptName !== $currentDept) { $currentDept = $deptName; $html .= '<tr class="dept-row"><td colspan="6">' . htmlspecialchars($deptName) . '</td></tr>'; }
+            $html .= '<tr><td class="num">' . $i++ . '</td><td>' . htmlspecialchars($pName) . ($isMain ? ' *' : '') . '</td><td class="num">' . $pcs . '</td><td class="num">' . $wpp . '</td><td class="num">' . ($wt ?: 'â') . '</td><td class="num">' . ($gattiReq ?: 'â') . '</td></tr>';
+        }
+        $html .= '</tbody><tfoot><tr><td colspan="4" style="text-align:right;">TOTAL</td><td class="num">' . round($totalWt, 4) . '</td><td class="num">' . round($totalGatti, 4) . '</td></tr></tfoot></table></body></html>';
+
+        return $this->response->setHeader('Content-Type', 'text/html; charset=utf-8')->setBody($html);
     }
 
     public function partRequirements($id)
@@ -1229,7 +1481,7 @@ class Orders extends BaseController
                 return strcmp($parts[$a]['name'] ?? '', $parts[$b]['name'] ?? '');
             });
 
-            $podiIds = array_filter(array_unique(array_column($aggregated, 'podi_id')));
+            $podiIds = array_values(array_filter(array_unique(array_column($aggregated, 'podi_id'))));
             if ($podiIds) {
                 $ph2    = implode(',', array_fill(0, count($podiIds), '?'));
                 $poRows = $this->db->query("SELECT id, name, weight FROM podi WHERE id IN ($ph2)", array_values($podiIds))->getResultArray();
@@ -1318,7 +1570,7 @@ class Orders extends BaseController
                 return strcmp($parts[$a]['name'] ?? '', $parts[$b]['name'] ?? '');
             });
 
-            $podiIds = array_filter(array_unique(array_column($aggregated, 'podi_id')));
+            $podiIds = array_values(array_filter(array_unique(array_column($aggregated, 'podi_id'))));
             if ($podiIds) {
                 $ph2    = implode(',', array_fill(0, count($podiIds), '?'));
                 $poRows = $this->db->query("SELECT id, name, weight FROM podi WHERE id IN ($ph2)", array_values($podiIds))->getResultArray();
@@ -1499,7 +1751,7 @@ class Orders extends BaseController
             SELECT oi.*, p.name as product_name, p.sku,
                    pt.variations as pt_variations, pt.multiplication_factor,
                    b.clasp_size,
-                   pp.name as pattern_name,
+                   pp.name as pattern_name, pp.tamil_name as pattern_tamil_name, pp.pattern_code,
                    s.name as stamp_name
             FROM order_items oi
             JOIN product p ON p.id = oi.product_id
@@ -1515,7 +1767,7 @@ class Orders extends BaseController
         foreach ($rawItems as $item) {
             $varIds = [];
             if (!empty($item['pt_variations'])) {
-                $varIds = array_filter(array_map('trim', explode(',', $item['pt_variations'])));
+                $varIds = array_values(array_filter(array_map('trim', explode(',', $item['pt_variations']))));
             }
             $variations = [];
             if ($varIds) {
@@ -1545,10 +1797,10 @@ class Orders extends BaseController
         if ($order['status'] === 'draft') return redirect()->to('orders/view/' . $id)->with('error', 'Confirm order first');
 
         $rawItems = $this->db->query('
-            SELECT oi.*, p.name as product_name, p.sku,
+            SELECT oi.*, p.name as product_name, p.sku, p.main_part_id,
                    pt.variations as pt_variations, pt.multiplication_factor,
                    b.clasp_size,
-                   pp.name as pattern_name,
+                   pp.name as pattern_name, pp.tamil_name as pattern_tamil_name, pp.pattern_code,
                    s.name as stamp_name
             FROM order_items oi
             JOIN product p ON p.id = oi.product_id
@@ -1564,7 +1816,7 @@ class Orders extends BaseController
         foreach ($rawItems as $item) {
             $varIds = [];
             if (!empty($item['pt_variations'])) {
-                $varIds = array_filter(array_map('trim', explode(',', $item['pt_variations'])));
+                $varIds = array_values(array_filter(array_map('trim', explode(',', $item['pt_variations']))));
             }
             $variations = [];
             if ($varIds) {
@@ -1579,11 +1831,29 @@ class Orders extends BaseController
             $items[] = $item;
         }
 
+        // Pre-pass: collect header data (stamps + estimated weight)
+        $headerStamps   = [];
+        $totalEstWeight = 0.0;
+        foreach ($items as $_item) {
+            if (!empty($_item['stamp_name']) && !in_array($_item['stamp_name'], $headerStamps)) {
+                $headerStamps[] = $_item['stamp_name'];
+            }
+            if (!empty($_item['qty_map'])) {
+                $wmap = $this->_computeWeightMap(
+                    $_item['product_id'], $_item['pattern_id'], (int)($_item['main_part_id'] ?? 0), $id
+                );
+                foreach ($_item['qty_map'] as $vid => $qty) {
+                    $totalEstWeight += (float)($wmap[$vid] ?? 0) * (int)$qty;
+                }
+            }
+        }
+
         $css = '
             body { font-family: latha; font-size: 12px; color: #222; }
             h2 { font-size: 15px; margin: 0 0 4px 0; }
             .meta { font-size: 11px; color: #555; margin-bottom: 10px; }
-            .product-block { margin-bottom: 14px; border: 1px solid #ccc; border-radius: 4px; overflow: hidden; }
+            .product-block { page-break-inside: avoid; break-inside: avoid; margin-bottom: 14px; border: 1px solid #ccc; border-radius: 4px; overflow: hidden; }
+            table { page-break-inside: avoid; break-inside: avoid; }
             .product-header { background: #f0f4f8; padding: 6px 10px; font-weight: bold; font-size: 12px; }
             table { border-collapse: collapse; width: 100%; font-size: 11px; }
             th { background: #dce8f5; padding: 4px 8px; text-align: center; border: 1px solid #bbb; }
@@ -1592,44 +1862,171 @@ class Orders extends BaseController
             .badge { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 10px; }
             .badge-info { background: #d1ecf1; color: #0c5460; }
             .badge-warn { background: #fff3cd; color: #856404; }
+            .stamp-label { font-size: 15px; font-weight: bold; color: #333; }
+            .g-even { background: #fde8c8; }
+            .g-odd  { background: #d4edda; }
         ';
 
         $html = '<html><head><meta charset="utf-8"><style>' . $css . '</style></head><body>';
-        $html .= '<h2>' . htmlspecialchars($order['title']) . '</h2>';
-        $html .= '<div class="meta">';
-        if ($order['client_name']) $html .= 'Client: <strong>' . htmlspecialchars($order['client_name']) . '</strong> &nbsp; ';
-        $html .= 'Status: ' . ucfirst($order['status']) . ' &nbsp; Date: ' . date('d M Y', strtotime($order['created_at']));
-        $html .= '</div>';
+        // 3-column header: Left = stamps + date | Centre = title | Right = order# + est weight
+        $html .= '<table width="100%" style="margin-bottom:10px;border-bottom:1px solid #ccc;padding-bottom:6px;"><tr>';
+        // Left column
+        $html .= '<td width="33%" style="vertical-align:top;">';
+        if (!empty($headerStamps)) {
+            $html .= '<div style="font-size:13px;font-weight:bold;">சீல் : ' . htmlspecialchars(implode(', ', $headerStamps)) . '</div>';
+        }
+        $html .= '<div style="font-size:11px;color:#555;margin-top:2px;">' . date('d M Y', strtotime($order['created_at'])) . '</div>';
+        $html .= '</td>';
+        // Centre column
+        $html .= '<td width="34%" style="text-align:center;vertical-align:middle;">';
+        $html .= '<div style="font-size:16px;font-weight:bold;">' . htmlspecialchars($order['title']) . '</div>';
+        if ($order['client_name']) $html .= '<div style="font-size:11px;color:#555;margin-top:2px;">' . htmlspecialchars($order['client_name']) . '</div>';
+        $html .= '</td>';
+        // Right column
+        $html .= '<td width="33%" style="text-align:right;vertical-align:top;">';
+        $html .= '<div style="font-size:13px;font-weight:bold;">Order #' . (int)$order['id'] . '</div>';
+        $html .= '<div style="font-size:11px;color:#555;margin-top:2px;">Est. Wt: ' . number_format($totalEstWeight, 2) . ' g</div>';
+        $html .= '</td>';
+        $html .= '</tr></table>';
 
         if (empty($items)) {
             $html .= '<p>No items in this order.</p>';
         } else {
+            $allVarCols = [];
+            $colTotals  = [];
+            $grandTotal = 0;
+
             foreach ($items as $idx => $item) {
                 $varsByGroup = [];
                 foreach ($item['variations'] as $v) $varsByGroup[$v['group_name']][] = $v;
-                $hasQty = count($item['qty_map']) > 0;
+
+                $displayName = !empty($item['pattern_tamil_name'])
+                    ? $item['pattern_tamil_name']
+                    : (!empty($item['pattern_name']) ? $item['pattern_name'] : $item['product_name']);
+
+                // Build active groups with sort key and totals
+                $activeGroups = [];
+                foreach ($varsByGroup as $gName => $vars) {
+                    $active = array_values(array_filter($vars, fn($v) => ($item['qty_map'][$v['id']] ?? 0) > 0));
+                    if (!empty($active)) {
+                        $groupLabel  = !empty($active[0]['group_tamil_name']) ? $active[0]['group_tamil_name'] : $gName;
+                        $groupTotal  = array_sum(array_map(fn($v) => (int)($item['qty_map'][$v['id']] ?? 0), $active));
+                        $minSize     = min(array_map(fn($v) => (float)($v['size'] ?? 0), $active));
+                        $activeGroups[] = ['label' => $groupLabel, 'vars' => $active, 'total' => $groupTotal, 'min_size' => $minSize];
+                    }
+                }
+                // Sort groups: smallest min variation size first
+                usort($activeGroups, fn($a, $b) => $a['min_size'] <=> $b['min_size']);
+
+                $productTotal = array_sum(array_column($activeGroups, 'total'));
+
+                // Accumulate for summary
+                foreach ($activeGroups as $g) {
+                    foreach ($g['vars'] as $v) {
+                        $qty = (int)($item['qty_map'][$v['id']] ?? 0);
+                        if (!isset($allVarCols[$v['id']])) {
+                            $allVarCols[$v['id']] = [
+                                'name'           => $v['name'],
+                                'size'           => (float)($v['size'] ?? 0),
+                                'group_label'    => $g['label'],
+                                'group_min_size' => $g['min_size'],
+                            ];
+                            $colTotals[$v['id']] = 0;
+                        }
+                        $colTotals[$v['id']] += $qty;
+                        $grandTotal           += $qty;
+                    }
+                }
 
                 $html .= '<div class="product-block">';
-                $html .= '<div class="product-header">' . ($idx + 1) . '. ' . htmlspecialchars($item['product_name']);
-                if ($item['sku']) $html .= ' <span style="color:#555;font-weight:normal;">(' . htmlspecialchars($item['sku']) . ')</span>';
-                if ($item['pattern_name']) $html .= ' <span class="badge badge-info">' . htmlspecialchars($item['pattern_name']) . '</span>';
-                if ($item['stamp_name']) $html .= ' <span class="badge badge-warn">' . htmlspecialchars($item['stamp_name']) . '</span>';
+                $html .= '<div class="product-header">' . ($idx + 1) . '. ' . htmlspecialchars($displayName);
+                if (!empty($item['pattern_code'])) $html .= ' <span style="font-size:10px;color:#777;font-weight:normal;">[' . htmlspecialchars($item['pattern_code']) . ']</span>';
+                if ($item['stamp_name']) $html .= ' <span class="stamp-label">சீல் : ' . htmlspecialchars($item['stamp_name']) . '</span>';
+                if ($productTotal > 0) $html .= ' <span style="font-weight:normal;font-size:10px;color:#555;">— ' . $productTotal . ' pcs</span>';
                 $html .= '</div>';
 
-                if ($hasQty) {
-                    foreach ($varsByGroup as $groupName => $vars) {
-                        $activeVars = array_filter($vars, fn($v) => ($item['qty_map'][$v['id']] ?? 0) > 0);
-                        if (empty($activeVars)) continue;
-                        $html .= '<table><thead><tr><th style="text-align:left;">' . htmlspecialchars($groupName) . '</th>';
-                        foreach ($activeVars as $v) $html .= '<th>' . htmlspecialchars($v['name']) . '<br>' . $v['size'] . '"</th>';
-                        $html .= '</tr></thead><tbody><tr><td class="lbl">Qty (pcs)</td>';
-                        foreach ($activeVars as $v) $html .= '<td>' . (int)($item['qty_map'][$v['id']] ?? 0) . '</td>';
-                        $html .= '</tr></tbody></table>';
+                if (!empty($activeGroups)) {
+                    $html .= '<table><thead>';
+                    // Row 1: group headers with total pcs, alternating colour
+                    $html .= '<tr>';
+                    foreach ($activeGroups as $gIdx => $g) {
+                        $cls = ($gIdx % 2 === 0) ? 'g-even' : 'g-odd';
+                        $html .= '<th colspan="' . count($g['vars']) . '" class="' . $cls . '" style="text-align:center;">'
+                               . htmlspecialchars($g['label']) . ' (' . $g['total'] . ' pcs)</th>';
                     }
+                    $html .= '</tr>';
+                    // Row 2: variation names only, same alternating colour
+                    $html .= '<tr>';
+                    foreach ($activeGroups as $gIdx => $g) {
+                        $cls = ($gIdx % 2 === 0) ? 'g-even' : 'g-odd';
+                        foreach ($g['vars'] as $v) {
+                            $html .= '<th class="' . $cls . '">' . htmlspecialchars($v['name']) . '</th>';
+                        }
+                    }
+                    $html .= '</tr></thead><tbody><tr>';
+                    // Row 3: quantities
+                    foreach ($activeGroups as $g) {
+                        foreach ($g['vars'] as $v) {
+                            $html .= '<td>' . (int)($item['qty_map'][$v['id']] ?? 0) . '</td>';
+                        }
+                    }
+                    $html .= '</tr></tbody></table>';
                 } else {
                     $html .= '<p style="padding:6px 10px;color:#888;font-size:11px;">No quantities entered</p>';
                 }
                 $html .= '</div>';
+            }
+            // Build summary section
+            if (!empty($allVarCols)) {
+                uasort($allVarCols, function($a, $b) {
+                    if ($a['group_min_size'] !== $b['group_min_size'])
+                        return $a['group_min_size'] <=> $b['group_min_size'];
+                    return $a['size'] <=> $b['size'];
+                });
+                $varIds = array_keys($allVarCols);
+
+                // Build group spans
+                $headerGroups = [];
+                $prevLabel    = null;
+                foreach ($allVarCols as $vid => $vc) {
+                    if ($vc['group_label'] !== $prevLabel) {
+                        $headerGroups[] = ['label' => $vc['group_label'], 'count' => 0, 'total' => 0];
+                        $prevLabel = $vc['group_label'];
+                    }
+                    $headerGroups[count($headerGroups)-1]['count']++;
+                    $headerGroups[count($headerGroups)-1]['total'] += $colTotals[$vid];
+                }
+
+                $html .= '<div style="page-break-before:always;"></div>';
+                $html .= '<h3 style="margin:0 0 6px 0;">Order Summary &mdash; ' . $grandTotal . ' pcs</h3>';
+                $html .= '<table><thead>';
+
+                // Row 1: group headers with group total
+                $html .= '<tr>';
+                foreach ($headerGroups as $gIdx => $g) {
+                    $cls = ($gIdx % 2 === 0) ? 'g-even' : 'g-odd';
+                    $html .= '<th colspan="' . $g['count'] . '" class="' . $cls . '">'
+                           . htmlspecialchars($g['label']) . ' (' . $g['total'] . ' pcs)</th>';
+                }
+                $html .= '<th>Total</th></tr>';
+
+                // Row 2: variation names
+                $html .= '<tr>';
+                $gIdx2 = 0; $prevLabel2 = null;
+                foreach ($allVarCols as $vid => $vc) {
+                    if ($vc['group_label'] !== $prevLabel2) { $gIdx2++; $prevLabel2 = $vc['group_label']; }
+                    $cls = (($gIdx2 - 1) % 2 === 0) ? 'g-even' : 'g-odd';
+                    $html .= '<th class="' . $cls . '">' . htmlspecialchars($vc['name']) . '</th>';
+                }
+                $html .= '<th></th></tr></thead>';
+
+                // Single data row: totals only
+                $html .= '<tbody><tr>';
+                foreach ($varIds as $vid) {
+                    $v = $colTotals[$vid];
+                    $html .= '<td>' . ($v > 0 ? $v : '&mdash;') . '</td>';
+                }
+                $html .= '<td><strong>' . $grandTotal . '</strong></td></tr></tbody></table>';
             }
         }
 
@@ -1760,7 +2157,7 @@ class Orders extends BaseController
                 WHERE pa.id IN ($ph)
             ", $partIds)->getResultArray();
 
-            $podiIds = array_filter(array_unique(array_column($aggregated, 'podi_id')));
+            $podiIds = array_values(array_filter(array_unique(array_column($aggregated, 'podi_id'))));
             $podiWeightMap = [];
             if ($podiIds) {
                 $ph2      = implode(',', array_fill(0, count($podiIds), '?'));

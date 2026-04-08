@@ -34,10 +34,97 @@ class PartBatch extends BaseController
 
     public function view($id)
     {
-        $db  = \Config\Database::connect();
+        $db    = \Config\Database::connect();
         $batch = $db->query('SELECT pb.*, p.name as part_name, p.tamil_name as part_tamil, s.name as stamp_name FROM part_batch pb LEFT JOIN part p ON p.id = pb.part_id LEFT JOIN stamp s ON s.id = pb.stamp_id WHERE pb.id = ?', [$id])->getRowArray();
         if (!$batch) return redirect()->to('part-stock')->with('error', 'Batch not found');
-        return view('part_batch/view', ['title' => 'Batch: '.$batch['batch_number'], 'batch' => $batch]);
+
+        $manual = $db->query("SELECT id, 'manual' as source, entry_type, reason, weight_g, qty, piece_weight_g, touch_pct, notes, created_at, NULL as part_order_id FROM part_batch_stock_log WHERE part_batch_id = ?", [$id])->getResultArray();
+
+        $fromOrders = $db->query("SELECT 'part_order' as source, 'in' as entry_type, CONCAT('Karigar receive — Part Order #', part_order_id) as reason, weight_g, qty, piece_weight_g, touch_pct, NULL as notes, received_at as created_at, part_order_id FROM part_order_receive WHERE part_batch_id = ? AND receive_type = 'part'", [$id])->getResultArray();
+
+        $history = array_merge($manual, $fromOrders);
+        usort($history, fn($a, $b) => strtotime($b['created_at']) - strtotime($a['created_at']));
+
+        return view('part_batch/view', [
+            'title'   => 'Batch: ' . $batch['batch_number'],
+            'batch'   => $batch,
+            'history' => $history,
+        ]);
+    }
+
+    public function stockEntry()
+    {
+        $db      = \Config\Database::connect();
+        $stamps  = $db->query('SELECT id, name FROM stamp ORDER BY name')->getResultArray();
+        $parts   = $db->query('SELECT id, name FROM part ORDER BY name')->getResultArray();
+        $batchNo = trim($this->request->getGet('batch') ?? '');
+        $batch   = null;
+        if ($batchNo) {
+            $batch = $db->query('SELECT pb.*, p.name as part_name, p.tamil_name as part_tamil, s.name as stamp_name FROM part_batch pb LEFT JOIN part p ON p.id = pb.part_id LEFT JOIN stamp s ON s.id = pb.stamp_id WHERE pb.batch_number = ?', [$batchNo])->getRowArray();
+        }
+        return view('part_batch/stock_entry', [
+            'title'   => 'Stock Entry',
+            'stamps'  => $stamps,
+            'parts'   => $parts,
+            'batch'   => $batch,
+            'batchNo' => $batchNo,
+        ]);
+    }
+
+    public function saveStockEntry($id)
+    {
+        $db    = \Config\Database::connect();
+        $batch = $db->query('SELECT * FROM part_batch WHERE id = ?', [$id])->getRowArray();
+        if (!$batch) return redirect()->to('part-stock/entry')->with('error', 'Batch not found');
+
+        $entryType = $this->request->getPost('entry_type');
+        $weightG   = (float)$this->request->getPost('weight_g');
+        $pcWeightG = (float)($this->request->getPost('piece_weight_g') ?: $batch['piece_weight_g']);
+        $pcs       = (int)$this->request->getPost('pcs');
+
+        // Weight is primary; if not given, back-calc from pcs
+        if ($weightG <= 0 && $pcs > 0 && $pcWeightG > 0) {
+            $weightG = round($pcs * $pcWeightG, 4);
+        }
+
+        if ($weightG <= 0) {
+            return redirect()->to('part-stock/entry?batch=' . urlencode($batch['batch_number']))->with('error', 'Weight must be greater than 0');
+        }
+
+        if ($entryType === 'out' && $weightG > (float)$batch['weight_in_stock_g']) {
+            return redirect()->to('part-stock/entry?batch=' . urlencode($batch['batch_number']))->with('error', 'Cannot remove ' . $weightG . 'g — only ' . $batch['weight_in_stock_g'] . 'g in stock');
+        }
+
+        $delta = $entryType === 'out' ? -$weightG : $weightG;
+        $db->query('UPDATE part_batch SET weight_in_stock_g = GREATEST(0, weight_in_stock_g + ?), qty_in_stock = ROUND(GREATEST(0, weight_in_stock_g + ?) / NULLIF(piece_weight_g, 0)) WHERE id = ?', [$delta, $delta, $id]);
+
+        // Fix 1: stamp locked once set — only update if currently null
+        $stampId = $batch['stamp_id'] ?: ($this->request->getPost('stamp_id') ?: null);
+        if (!$batch['stamp_id'] && $stampId) {
+            $db->query('UPDATE part_batch SET stamp_id = ? WHERE id = ?', [$stampId, $id]);
+        }
+
+        // Fix 2: allow part_id change if different from current
+        $postedPartId = (int)($this->request->getPost('part_id') ?? 0);
+        if ($postedPartId > 0 && $postedPartId !== (int)$batch['part_id']) {
+            $db->query('UPDATE part_batch SET part_id = ? WHERE id = ?', [$postedPartId, $id]);
+        }
+
+        $db->table('part_batch_stock_log')->insert([
+            'part_batch_id'  => $id,
+            'entry_type'     => $entryType,
+            'reason'         => $this->request->getPost('reason') ?? 'manual',
+            'weight_g'       => $weightG,
+            'qty'            => $pcWeightG > 0 ? (int)round($weightG / $pcWeightG) : $pcs,
+            'piece_weight_g' => $pcWeightG ?: null,
+            'touch_pct'      => (float)($this->request->getPost('touch_pct') ?? 0),
+            'stamp_id'       => $stampId,
+            'notes'          => $this->request->getPost('notes') ?: null,
+            'created_at'     => date('Y-m-d H:i:s'),
+        ]);
+
+        $action = $entryType === 'out' ? 'Removed' : 'Added';
+        return redirect()->to('part-stock/entry?batch=' . urlencode($batch['batch_number']))->with('success', $action . ' ' . number_format($weightG, 4) . 'g successfully');
     }
 
     public function labels()
@@ -72,10 +159,10 @@ class PartBatch extends BaseController
         foreach ($items as $item) {
             $partId = (int)($item['part_id'] ?? 0);
             $qty    = (int)($item['qty'] ?? 1);
-            if (!$partId || $qty < 1) continue;
+            if ($qty < 1) continue;
 
-            $part = $db->query('SELECT id, name FROM part WHERE id = ?', [$partId])->getRowArray();
-            if (!$part) continue;
+            $part     = $partId ? $db->query('SELECT id, name FROM part WHERE id = ?', [$partId])->getRowArray() : null;
+            $partName = $part ? $part['name'] : '(No Part)';
 
             for ($i = 0; $i < $qty; $i++) {
                 $lastNumber++;
@@ -95,7 +182,7 @@ class PartBatch extends BaseController
 
                 $db->table('part_batch')->insert([
                     'batch_number' => $batchNo,
-                    'part_id'      => $partId,
+                    'part_id'      => $partId ?: null,
                     'touch_pct'    => 0,
                     'qty_in_stock' => 0,
                     'created_at'   => date('Y-m-d H:i:s'),
@@ -105,8 +192,8 @@ class PartBatch extends BaseController
                 $batches[] = [
                     'id'           => $batchId,
                     'batch_number' => $batchNo,
-                    'part_name'    => $part['name'],
-                    'part_id'      => $partId,
+                    'part_name'    => $partName,
+                    'part_id'      => $partId ?: null,
                 ];
             }
         }
@@ -114,6 +201,95 @@ class PartBatch extends BaseController
         $db->query('UPDATE batch_serial_config SET prefix = ?, last_number = ?, updated_at = NOW() WHERE id = 1', [$prefix, $lastNumber]);
 
         return $this->response->setJSON(['success' => true, 'batches' => $batches]);
+    }
+
+    public function editStockEntry($logId)
+    {
+        $db  = \Config\Database::connect();
+        $log = $db->query('SELECT * FROM part_batch_stock_log WHERE id = ?', [$logId])->getRowArray();
+        if (!$log) return redirect()->to('part-stock')->with('error', 'Entry not found');
+
+        $batch  = $db->query('SELECT pb.*, p.name as part_name, p.tamil_name as part_tamil, s.name as stamp_name FROM part_batch pb LEFT JOIN part p ON p.id = pb.part_id LEFT JOIN stamp s ON s.id = pb.stamp_id WHERE pb.id = ?', [$log['part_batch_id']])->getRowArray();
+        $stamps = $db->query('SELECT id, name FROM stamp ORDER BY name')->getResultArray();
+        $parts  = $db->query('SELECT id, name FROM part ORDER BY name')->getResultArray();
+
+        return view('part_batch/stock_entry', [
+            'title'    => 'Edit Stock Entry',
+            'stamps'   => $stamps,
+            'parts'    => $parts,
+            'batch'    => $batch,
+            'batchNo'  => $batch['batch_number'],
+            'logEntry' => $log,
+        ]);
+    }
+
+    public function updateStockEntry($logId)
+    {
+        $db  = \Config\Database::connect();
+        $log = $db->query('SELECT * FROM part_batch_stock_log WHERE id = ?', [$logId])->getRowArray();
+        if (!$log) return redirect()->to('part-stock')->with('error', 'Entry not found');
+
+        $batch = $db->query('SELECT * FROM part_batch WHERE id = ?', [$log['part_batch_id']])->getRowArray();
+        if (!$batch) return redirect()->to('part-stock')->with('error', 'Batch not found');
+
+        $newEntryType = $this->request->getPost('entry_type');
+        $newWeightG   = (float)$this->request->getPost('weight_g');
+        $pcWeightG    = (float)($this->request->getPost('piece_weight_g') ?: $batch['piece_weight_g']);
+        $pcs          = (int)$this->request->getPost('pcs');
+
+        if ($newWeightG <= 0 && $pcs > 0 && $pcWeightG > 0) {
+            $newWeightG = round($pcs * $pcWeightG, 4);
+        }
+        if ($newWeightG <= 0) {
+            return redirect()->to('part-stock/stock-log/' . $logId . '/edit')->with('error', 'Weight must be greater than 0');
+        }
+
+        // Reverse old delta, then apply new delta
+        $oldDelta     = $log['entry_type'] === 'in' ? -(float)$log['weight_g'] : (float)$log['weight_g'];
+        $newDelta     = $newEntryType === 'in' ? $newWeightG : -$newWeightG;
+        $stockAfter   = (float)$batch['weight_in_stock_g'] + $oldDelta + $newDelta;
+
+        if ($stockAfter < 0) {
+            return redirect()->to('part-stock/stock-log/' . $logId . '/edit')->with('error', 'Insufficient stock after update');
+        }
+
+        $db->query('UPDATE part_batch SET weight_in_stock_g = GREATEST(0, weight_in_stock_g + ? + ?), qty_in_stock = ROUND(GREATEST(0, weight_in_stock_g + ? + ?) / NULLIF(piece_weight_g, 0)) WHERE id = ?', [$oldDelta, $newDelta, $oldDelta, $newDelta, $batch['id']]);
+
+        $stampId = $batch['stamp_id'] ?: ($this->request->getPost('stamp_id') ?: null);
+        $postedPartId = (int)($this->request->getPost('part_id') ?? 0);
+        if ($postedPartId > 0 && $postedPartId !== (int)$batch['part_id']) {
+            $db->query('UPDATE part_batch SET part_id = ? WHERE id = ?', [$postedPartId, $batch['id']]);
+        }
+
+        $db->query('UPDATE part_batch_stock_log SET entry_type=?, reason=?, weight_g=?, qty=?, piece_weight_g=?, touch_pct=?, stamp_id=?, notes=? WHERE id = ?', [
+            $newEntryType,
+            $this->request->getPost('reason') ?? 'manual',
+            $newWeightG,
+            $pcWeightG > 0 ? (int)round($newWeightG / $pcWeightG) : $pcs,
+            $pcWeightG ?: null,
+            (float)($this->request->getPost('touch_pct') ?? 0),
+            $stampId,
+            $this->request->getPost('notes') ?: null,
+            $logId,
+        ]);
+
+        return redirect()->to('part-stock/batch/' . $batch['id'])->with('success', 'Entry updated successfully');
+    }
+
+    public function deleteStockEntry($logId)
+    {
+        $db  = \Config\Database::connect();
+        $log = $db->query('SELECT * FROM part_batch_stock_log WHERE id = ?', [$logId])->getRowArray();
+        if (!$log) return redirect()->to('part-stock')->with('error', 'Entry not found');
+
+        $batch = $db->query('SELECT * FROM part_batch WHERE id = ?', [$log['part_batch_id']])->getRowArray();
+        if (!$batch) return redirect()->to('part-stock')->with('error', 'Batch not found');
+
+        $delta = $log['entry_type'] === 'in' ? -(float)$log['weight_g'] : (float)$log['weight_g'];
+        $db->query('UPDATE part_batch SET weight_in_stock_g = GREATEST(0, weight_in_stock_g + ?), qty_in_stock = ROUND(GREATEST(0, weight_in_stock_g + ?) / NULLIF(piece_weight_g, 0)) WHERE id = ?', [$delta, $delta, $batch['id']]);
+        $db->query('DELETE FROM part_batch_stock_log WHERE id = ?', [$logId]);
+
+        return redirect()->to('part-stock/batch/' . $batch['id'])->with('success', 'Entry deleted and stock reversed');
     }
 
     public function scan()

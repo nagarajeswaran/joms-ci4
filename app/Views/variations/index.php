@@ -7,12 +7,13 @@
 <div class="card">
     <div class="card-body p-0">
         <table class="table table-hover mb-0">
-            <thead><tr><th>#</th><th>Group Name</th><th>Name</th><th>Size</th><th>Actions</th></tr></thead>
+            <thead><tr><th>#</th><th>Group Name</th><th>Group Tamil Name</th><th>Name</th><th>Size</th><th>Actions</th></tr></thead>
             <tbody>
                 <?php foreach ($items as $i => $item): ?>
                 <tr>
                     <td><?= $i + 1 ?></td>
                     <td><?= esc($item['group_name'] ?? '') ?></td>
+                    <td><?= esc($item['group_tamil_name'] ?? '') ?></td>
                     <td><?= esc($item['name']) ?></td>
                     <td><?= esc($item['size'] ?? '') ?></td>
                     <td>
@@ -21,7 +22,7 @@
                     </td>
                 </tr>
                 <?php endforeach; ?>
-                <?php if (empty($items)): ?><tr><td colspan="5" class="text-center text-muted py-4">No variations found</td></tr><?php endif; ?>
+                <?php if (empty($items)): ?><tr><td colspan="6" class="text-center text-muted py-4">No variations found</td></tr><?php endif; ?>
             </tbody>
         </table>
     </div>

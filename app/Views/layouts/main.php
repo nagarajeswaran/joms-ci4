@@ -90,6 +90,8 @@
         <a href="<?= base_url('templates') ?>" class="<?= str_starts_with(uri_string(), 'templates') ? 'active' : '' ?>"><i class="bi bi-file-earmark-text"></i> BOM Templates</a>
         <div class="nav-section">Production</div>
         <a href="<?= base_url('products') ?>" class="<?= str_starts_with(uri_string(), 'products') ? 'active' : '' ?>"><i class="bi bi-bag"></i> Products</a>
+        <a href="<?= base_url('products/imageGallery') ?>" class="<?= uri_string() == 'products/imageGallery' ? 'active' : '' ?>" style="padding-left:28px;font-size:12px;"><i class="bi bi-images"></i> Image Gallery</a>
+        <a href="<?= base_url('products/bulkEdit') ?>" class="<?= str_starts_with(uri_string(), 'products/bulk') ? 'active' : '' ?>" style="padding-left:28px;font-size:12px;"><i class="bi bi-file-earmark-spreadsheet"></i> Bulk Update</a>
         <a href="<?= base_url('orders') ?>" class="<?= str_starts_with(uri_string(), 'orders') ? 'active' : '' ?>"><i class="bi bi-clipboard-check"></i> Orders</a>
         <div class="nav-section">Inventory</div>
         <a href="<?= base_url('stock') ?>" class="<?= str_starts_with(uri_string(), 'stock') ? 'active' : '' ?>"><i class="bi bi-boxes"></i> Stock</a>
@@ -99,6 +101,7 @@
         <a href="<?= base_url('stock/low-stock') ?>" class="<?= uri_string() == 'stock/low-stock' ? 'active' : '' ?>"><i class="bi bi-exclamation-triangle"></i> Low Stock</a>
         <a href="<?= base_url('stock/audit-log') ?>" class="<?= uri_string() == 'stock/audit-log' ? 'active' : '' ?>"><i class="bi bi-journal-text"></i> Audit Log</a>
         <a href="<?= base_url('stock/label-generate') ?>" class="<?= uri_string() == 'stock/label-generate' ? 'active' : '' ?>"><i class="bi bi-printer"></i> Generate Labels</a>
+        <a href="<?= base_url('stock/qr-registry') ?>" class="<?= uri_string() == 'stock/qr-registry' ? 'active' : '' ?>"><i class="bi bi-upc-scan"></i> QR Registry</a>
         <div class="nav-section">Manufacturing</div>
         <a href="<?= base_url('karigar') ?>" class="<?= str_starts_with(uri_string(), 'karigar') && !str_starts_with(uri_string(), 'karigar-ledger') ? 'active' : '' ?>"><i class="bi bi-person-badge"></i> Karigar</a>
         <a href="<?= base_url('melt-jobs') ?>" class="<?= str_starts_with(uri_string(), 'melt-jobs') ? 'active' : '' ?>"><i class="bi bi-fire"></i> Melt Jobs</a>

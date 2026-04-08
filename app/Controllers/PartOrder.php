@@ -185,6 +185,7 @@ class PartOrder extends BaseController
                         'piece_weight_g'      => $pcWeight ?: $batch['piece_weight_g'],
                         'touch_pct'           => $touch,
                         'qty_in_stock'        => $batch['qty_in_stock'] + $qty,
+                        'weight_in_stock_g'   => (float)$batch['weight_in_stock_g'] + $weight,
                         'source_part_order_id'=> $id,
                         'received_at'         => date('Y-m-d H:i:s'),
                     ]);
@@ -195,6 +196,7 @@ class PartOrder extends BaseController
                         'piece_weight_g'      => $pcWeight,
                         'touch_pct'           => $touch,
                         'qty_in_stock'        => $qty,
+                        'weight_in_stock_g'   => $weight,
                         'source_part_order_id'=> $id,
                         'received_at'         => date('Y-m-d H:i:s'),
                     ]);
@@ -245,7 +247,7 @@ class PartOrder extends BaseController
             $po = $db->query('SELECT * FROM part_order WHERE id = ?', [$recv['part_order_id']])->getRowArray();
             if ($po && $po['status'] !== 'posted') {
                 if ($recv['part_batch_id'] && $recv['qty']) {
-                    $db->query('UPDATE part_batch SET qty_in_stock = GREATEST(0, qty_in_stock - ?) WHERE id = ?', [$recv['qty'], $recv['part_batch_id']]);
+                    $db->query('UPDATE part_batch SET qty_in_stock = GREATEST(0, qty_in_stock - ?), weight_in_stock_g = GREATEST(0, weight_in_stock_g - ?) WHERE id = ?', [$recv['qty'], (float)$recv['weight_g'], $recv['part_batch_id']]);
                 }
                 $db->table('part_order_receive')->where('id', $recvId)->delete();
             }

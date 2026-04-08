@@ -90,14 +90,21 @@ class Products extends BaseController
         $items = $this->db->query($sql, $params)->getResultArray();
         $productTypes = $this->db->query('SELECT * FROM product_type ORDER BY name')->getResultArray();
 
+        $bodies       = $this->db->query('SELECT id, name FROM body ORDER BY name')->getResultArray();
+        $pidiRaw      = $this->db->query("SELECT DISTINCT pidi FROM product WHERE pidi IS NOT NULL AND pidi != '' ORDER BY pidi+0, pidi")->getResultArray();
+        $mainParts    = $this->db->query('SELECT DISTINCT mp.id, mp.name FROM part mp JOIN product p ON p.main_part_id = mp.id ORDER BY mp.name')->getResultArray();
+
         return view('products/index', [
-            'title' => 'Products',
-            'items' => $items,
+            'title'        => 'Products',
+            'items'        => $items,
             'productTypes' => $productTypes,
-            'search' => $search,
-            'filterType' => $filterType,
-            'sortBy' => $sortBy,
-            'sortDir' => strtolower($sortDir),
+            'bodies'       => $bodies,
+            'pidiValues'   => array_column($pidiRaw, 'pidi'),
+            'mainParts'    => $mainParts,
+            'search'       => $search,
+            'filterType'   => $filterType,
+            'sortBy'       => $sortBy,
+            'sortDir'      => strtolower($sortDir),
         ]);
     }
 
@@ -626,9 +633,24 @@ class Products extends BaseController
         }
 
         $patShortName = trim($data['short_name'] ?? '');
+
+        // Auto-generate pattern_code
+        $productSku = $this->db->query('SELECT sku FROM product WHERE id = ?', [$productId])->getRowArray()['sku'] ?? '';
+        $isDefault  = !empty($data['is_default']);
+        if ($isDefault) {
+            $patternCode = $productSku . '-P00';
+        } else {
+            $existingCount = $this->db->query(
+                'SELECT COUNT(*) as cnt FROM product_pattern WHERE product_id = ? AND is_default = 0',
+                [$productId]
+            )->getRowArray()['cnt'];
+            $patternCode = $productSku . '-P' . str_pad($existingCount + 1, 2, '0', STR_PAD_LEFT);
+        }
+
         $patternData = [
             'product_id' => $productId,
             'pattern_name_id' => $patternNameId,
+            'pattern_code' => $patternCode,
             'name' => $displayName,
             'short_name' => $patShortName !== '' ? $patShortName : null,
             'tamil_name' => $data['new_pattern_tamil'] ?? '',
@@ -785,4 +807,311 @@ class Products extends BaseController
 
         return redirect()->to('products/view/' . $pat['product_id'])->with('success', 'Pattern changes saved');
     }
+    // =========================================================
+    // BULK TEXT UPDATE
+    // =========================================================
+
+    public function bulkEdit()
+    {
+        $productTypes = $this->db->query('SELECT * FROM product_type ORDER BY name')->getResultArray();
+        $bodies       = $this->db->query('SELECT id, name FROM body ORDER BY name')->getResultArray();
+        $pidiRaw      = $this->db->query("SELECT DISTINCT pidi FROM product WHERE pidi IS NOT NULL AND pidi != '' ORDER BY pidi+0, pidi")->getResultArray();
+        $mainParts    = $this->db->query('SELECT DISTINCT mp.id, mp.name FROM part mp JOIN product p ON p.main_part_id = mp.id ORDER BY mp.name')->getResultArray();
+
+        return view('products/bulk_edit', [
+            'title'        => 'Bulk Update Products',
+            'productTypes' => $productTypes,
+            'bodies'       => $bodies,
+            'pidiValues'   => array_column($pidiRaw, 'pidi'),
+            'mainParts'    => $mainParts,
+        ]);
+    }
+
+    public function bulkExportCsv()
+    {
+        $filterType = $this->request->getGet('type') ?? '';
+        $filterBody = $this->request->getGet('body') ?? '';
+        $filterPidi = $this->request->getGet('pidi') ?? '';
+        $filterMain = $this->request->getGet('main') ?? '';
+
+        $where  = [];
+        $params = [];
+        if ($filterType !== '') { $where[] = 'p.product_type_id = ?'; $params[] = $filterType; }
+        if ($filterBody !== '') { $where[] = 'p.body_id = ?';          $params[] = $filterBody; }
+        if ($filterPidi !== '') { $where[] = 'p.pidi = ?';             $params[] = $filterPidi; }
+        if ($filterMain !== '') { $where[] = 'p.main_part_id = ?';     $params[] = $filterMain; }
+        $whereClause = $where ? 'WHERE ' . implode(' AND ', $where) : '';
+
+        $rows = $this->db->query("
+            SELECT p.id as product_id, p.sku as product_sku, p.name as product_name,
+                   p.tamil_name as product_tamil_name, p.short_name as product_short_name,
+                   pp.id as pattern_id, COALESCE(pn.name,'Default') as pattern_name,
+                   pp.tamil_name as pattern_tamil_name, pp.short_name as pattern_short_name
+            FROM product p
+            JOIN product_pattern pp ON pp.product_id = p.id
+            LEFT JOIN pattern_name pn ON pn.id = pp.pattern_name_id
+            $whereClause
+            ORDER BY p.name, pp.is_default DESC, pp.id
+        ", $params)->getResultArray();
+
+        $parts = array_filter([$filterType ? 'type'.$filterType : '', $filterBody ? 'body'.$filterBody : '',
+                               $filterPidi ? 'pidi'.str_replace('.','_',$filterPidi) : '', $filterMain ? 'part'.$filterMain : '']);
+        $filename = 'products_bulk' . ($parts ? '_' . implode('_', $parts) : '') . '.csv';
+
+        header('Content-Type: text/csv; charset=UTF-8');
+        header('Content-Disposition: attachment; filename=' . $filename);
+        header('Pragma: no-cache');
+        header('Expires: 0');
+
+        $out = fopen('php://output', 'w');
+        fwrite($out, "\xEF\xBB\xBF");
+        fputcsv($out, ['product_id','product_sku','product_name','product_tamil_name','product_short_name',
+                       'pattern_id','pattern_name','pattern_tamil_name','pattern_short_name']);
+        foreach ($rows as $r) {
+            fputcsv($out, [
+                $r['product_id'], $r['product_sku'], $r['product_name'],
+                $r['product_tamil_name'], $r['product_short_name'],
+                $r['pattern_id'], $r['pattern_name'],
+                $r['pattern_tamil_name'], $r['pattern_short_name'],
+            ]);
+        }
+        fclose($out);
+        exit;
+    }
+
+    public function bulkPreview()
+    {
+        $file = $this->request->getFile('csv_file');
+        if (!$file || !$file->isValid() || $file->getClientExtension() !== 'csv') {
+            return redirect()->to('products/bulkEdit')->with('error', 'Please upload a valid .csv file.');
+        }
+        if ($file->getSize() > 2 * 1024 * 1024) {
+            return redirect()->to('products/bulkEdit')->with('error', 'File too large (max 2 MB).');
+        }
+
+        $handle = fopen($file->getTempName(), 'r');
+        $bom = fread($handle, 3);
+        if ($bom !== "\xEF\xBB\xBF") rewind($handle);
+
+        $header = fgetcsv($handle);
+        $expected = ['product_id','product_sku','product_name','product_tamil_name','product_short_name',
+                     'pattern_id','pattern_name','pattern_tamil_name','pattern_short_name'];
+        if ($header !== $expected) {
+            fclose($handle);
+            return redirect()->to('products/bulkEdit')->with('error', 'CSV columns do not match the template. Please re-download the template.');
+        }
+
+        $products   = array_column($this->db->query('SELECT id, sku, name, tamil_name, short_name FROM product')->getResultArray(), null, 'id');
+        $patternRows = $this->db->query("
+            SELECT pp.id, pp.product_id, COALESCE(pn.name,'Default') as pattern_name,
+                   pp.tamil_name, pp.short_name
+            FROM product_pattern pp
+            LEFT JOIN pattern_name pn ON pn.id = pp.pattern_name_id
+        ")->getResultArray();
+        $patternMap = array_column($patternRows, null, 'id');
+
+        $changes = [];
+        $rowNum  = 1;
+        $errors  = [];
+
+        while (($row = fgetcsv($handle)) !== false) {
+            $rowNum++;
+            if (count($row) < 9) { $errors[] = "Row $rowNum: too few columns."; continue; }
+            $pid  = (int)$row[0];
+            $ptid = (int)$row[5];
+            if (!isset($products[$pid]))    { $errors[] = "Row $rowNum: product_id $pid not found.";  continue; }
+            if (!isset($patternMap[$ptid])) { $errors[] = "Row $rowNum: pattern_id $ptid not found."; continue; }
+            if ($patternMap[$ptid]['product_id'] != $pid) { $errors[] = "Row $rowNum: pattern $ptid does not belong to product $pid."; continue; }
+
+            $cur    = $products[$pid];
+            $curPat = $patternMap[$ptid];
+
+            $newSku      = trim($row[1]);
+            $newName     = trim($row[2]);
+            $newTamil    = trim($row[3]);
+            $newShort    = trim($row[4]);
+            $newPatName  = trim($row[6]);
+            $newPatTamil = trim($row[7]);
+            $newPatShort = trim($row[8]);
+
+            $dbSku      = trim((string)($cur['sku']               ?? ''));
+            $dbName     = trim((string)($cur['name']              ?? ''));
+            $dbTamil    = trim((string)($cur['tamil_name']        ?? ''));
+            $dbShort    = trim((string)($cur['short_name']        ?? ''));
+            $dbPatName  = trim((string)($curPat['pattern_name']   ?? ''));
+            $dbPatTamil = trim((string)($curPat['tamil_name']     ?? ''));
+            $dbPatShort = trim((string)($curPat['short_name']     ?? ''));
+
+            $prodChanged = ($newSku   !== $dbSku)   ||
+                           ($newName  !== $dbName)  ||
+                           ($newTamil !== $dbTamil) ||
+                           ($newShort !== $dbShort);
+            $patChanged  = ($newPatName  !== $dbPatName)  ||
+                           ($newPatTamil !== $dbPatTamil) ||
+                           ($newPatShort !== $dbPatShort);
+
+            if (!$prodChanged && !$patChanged) continue;
+
+            $changes[] = [
+                'product_id'    => $pid,
+                'old_sku'       => $cur['sku']           ?? '',
+                'old_name'      => $cur['name']          ?? '',
+                'old_tamil'     => $cur['tamil_name']    ?? '',
+                'old_short'     => $cur['short_name']    ?? '',
+                'new_sku'       => $newSku,
+                'new_name'      => $newName,
+                'new_tamil'     => $newTamil,
+                'new_short'     => $newShort,
+                'prod_changed'  => $prodChanged,
+                'pattern_id'    => $ptid,
+                'old_pat_name'  => $curPat['pattern_name'] ?? '',
+                'old_pat_tamil' => $curPat['tamil_name']   ?? '',
+                'old_pat_short' => $curPat['short_name']   ?? '',
+                'new_pat_name'  => $newPatName,
+                'new_pat_tamil' => $newPatTamil,
+                'new_pat_short' => $newPatShort,
+                'pat_changed'   => $patChanged,
+            ];
+        }
+        fclose($handle);
+
+        if (!empty($errors)) {
+            return redirect()->to('products/bulkEdit')->with('error', implode('<br>', array_slice($errors, 0, 10)));
+        }
+        if (empty($changes)) {
+            return redirect()->to('products/bulkEdit')->with('info', 'No changes detected in the uploaded CSV.');
+        }
+
+        session()->set('bulk_changes', $changes);
+        return view('products/bulk_preview', ['title' => 'Preview Changes', 'changes' => $changes]);
+    }
+
+    public function bulkConfirm()
+    {
+        $changes = session()->get('bulk_changes');
+        if (!$changes) {
+            return redirect()->to('products/bulkEdit')->with('error', 'Session expired. Please re-upload the CSV.');
+        }
+        session()->remove('bulk_changes');
+
+        $updatedProducts = [];
+        $updatedPatterns = 0;
+
+        foreach ($changes as $ch) {
+            if ($ch['prod_changed'] && !in_array($ch['product_id'], $updatedProducts)) {
+                $this->db->table('product')->where('id', $ch['product_id'])->update([
+                    'sku'        => $ch['new_sku']   ?: null,
+                    'name'       => $ch['new_name'],
+                    'tamil_name' => $ch['new_tamil'],
+                    'short_name' => $ch['new_short'] ?: null,
+                ]);
+                $updatedProducts[] = $ch['product_id'];
+            }
+            if ($ch['pat_changed']) {
+                $patternNameId = null;
+                if ($ch['new_pat_name'] !== '' && $ch['new_pat_name'] !== 'Default') {
+                    $existing = $this->db->query("SELECT id FROM pattern_name WHERE name = ?", [$ch['new_pat_name']])->getRowArray();
+                    if ($existing) {
+                        $patternNameId = $existing['id'];
+                    } else {
+                        $this->db->table('pattern_name')->insert(['name' => $ch['new_pat_name'], 'tamil_name' => $ch['new_pat_tamil']]);
+                        $patternNameId = $this->db->insertID();
+                    }
+                }
+                $this->db->table('product_pattern')->where('id', $ch['pattern_id'])->update([
+                    'pattern_name_id' => $patternNameId,
+                    'tamil_name'      => $ch['new_pat_tamil'],
+                    'short_name'      => $ch['new_pat_short'] ?: null,
+                ]);
+                $updatedPatterns++;
+            }
+        }
+
+        $msg = count($updatedProducts) . ' products and ' . $updatedPatterns . ' patterns updated successfully.';
+        return redirect()->to('products')->with('success', $msg);
+    }
+
+    // =========================================================
+    // IMAGE GALLERY
+    // =========================================================
+
+    public function imageGallery()
+    {
+        $products = $this->db->query("
+            SELECT p.id, p.sku, p.name, p.image, p.product_type_id,
+                   pt.name as product_type_name
+            FROM product p
+            LEFT JOIN product_type pt ON pt.id = p.product_type_id
+            ORDER BY p.name
+        ")->getResultArray();
+
+        $patterns = $this->db->query("
+            SELECT pp.id, pp.product_id, pp.image, pp.is_default,
+                   COALESCE(pn.name,'Default') as pattern_name
+            FROM product_pattern pp
+            LEFT JOIN pattern_name pn ON pn.id = pp.pattern_name_id
+            ORDER BY pp.product_id, pp.is_default DESC, pp.id
+        ")->getResultArray();
+
+        $patternsByProduct = [];
+        foreach ($patterns as $p) {
+            $patternsByProduct[$p['product_id']][] = $p;
+        }
+
+        $productTypes = $this->db->query('SELECT id, name FROM product_type ORDER BY name')->getResultArray();
+
+        return view('products/image_gallery', [
+            'title'             => 'Image Gallery',
+            'products'          => $products,
+            'patternsByProduct' => $patternsByProduct,
+            'productTypes'      => $productTypes,
+        ]);
+    }
+
+    public function ajaxUploadProductImage($productId)
+    {
+        $productId = (int)$productId;
+        $file = $this->request->getFile('product_image');
+        if (!$file || !$file->isValid()) {
+            return $this->response->setJSON(['success' => false, 'error' => 'No valid file received.']);
+        }
+        if (!in_array($file->getMimeType(), ['image/jpeg','image/png','image/gif','image/webp'])) {
+            return $this->response->setJSON(['success' => false, 'error' => 'Only image files allowed.']);
+        }
+        if ($file->getSize() > 2 * 1024 * 1024) {
+            return $this->response->setJSON(['success' => false, 'error' => 'File too large (max 2 MB).']);
+        }
+        $uploadPath = FCPATH . 'uploads/products';
+        $row = $this->db->query('SELECT image FROM product WHERE id = ?', [$productId])->getRowArray();
+        if (!$row) return $this->response->setJSON(['success' => false, 'error' => 'Product not found.']);
+        if (!empty($row['image']) && file_exists($uploadPath . '/' . $row['image'])) @unlink($uploadPath . '/' . $row['image']);
+        $newName = $file->getRandomName();
+        $file->move($uploadPath, $newName);
+        $this->db->table('product')->where('id', $productId)->update(['image' => $newName]);
+        return $this->response->setJSON(['success' => true, 'url' => base_url('uploads/products/' . $newName)]);
+    }
+
+    public function ajaxUploadPatternImage($patternId)
+    {
+        $patternId = (int)$patternId;
+        $file = $this->request->getFile('pattern_image');
+        if (!$file || !$file->isValid()) {
+            return $this->response->setJSON(['success' => false, 'error' => 'No valid file received.']);
+        }
+        if (!in_array($file->getMimeType(), ['image/jpeg','image/png','image/gif','image/webp'])) {
+            return $this->response->setJSON(['success' => false, 'error' => 'Only image files allowed.']);
+        }
+        if ($file->getSize() > 2 * 1024 * 1024) {
+            return $this->response->setJSON(['success' => false, 'error' => 'File too large (max 2 MB).']);
+        }
+        $uploadPath = FCPATH . 'uploads/patterns';
+        $row = $this->db->query('SELECT image FROM product_pattern WHERE id = ?', [$patternId])->getRowArray();
+        if (!$row) return $this->response->setJSON(['success' => false, 'error' => 'Pattern not found.']);
+        if (!empty($row['image']) && file_exists($uploadPath . '/' . $row['image'])) @unlink($uploadPath . '/' . $row['image']);
+        $newName = $file->getRandomName();
+        $file->move($uploadPath, $newName);
+        $this->db->table('product_pattern')->where('id', $patternId)->update(['image' => $newName]);
+        return $this->response->setJSON(['success' => true, 'url' => base_url('uploads/patterns/' . $newName)]);
+    }
+
 }

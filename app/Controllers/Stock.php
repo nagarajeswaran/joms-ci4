@@ -19,14 +19,17 @@ class Stock extends BaseController
 
     private function getOrCreateQr(int $productId, int $patternId, int $variationId): array
     {
+        // Fast path — already exists
         $existing = $this->db->query(
             'SELECT * FROM qr_codes WHERE product_id=? AND pattern_id=? AND variation_id=?',
             [$productId, $patternId, $variationId]
         )->getRowArray();
-
         if ($existing) return $existing;
 
-        $row      = $this->db->query('SELECT COALESCE(MAX(qr_number), 10000) + 1 AS next_num FROM qr_codes')->getRowArray();
+        // Race-safe: lock the table for number reservation
+        $this->db->transStart();
+
+        $row      = $this->db->query('SELECT COALESCE(MAX(qr_number), 10000) + 1 AS next_num FROM qr_codes FOR UPDATE')->getRowArray();
         $qrNumber = (int)$row['next_num'];
 
         $qrCode = new QrCode(
@@ -45,20 +48,19 @@ class Stock extends BaseController
         $b64    = base64_encode($result->getString());
         $now    = date('Y-m-d H:i:s');
 
+        // INSERT IGNORE: if unique constraint fires (race), silently skip
         $this->db->query(
-            'INSERT INTO qr_codes (qr_number, product_id, pattern_id, variation_id, qr_image, generated_at) VALUES (?,?,?,?,?,?)',
+            'INSERT IGNORE INTO qr_codes (qr_number, product_id, pattern_id, variation_id, qr_image, generated_at) VALUES (?,?,?,?,?,?)',
             [$qrNumber, $productId, $patternId, $variationId, $b64, $now]
         );
 
-        return [
-            'id'           => $this->db->insertID(),
-            'qr_number'    => $qrNumber,
-            'product_id'   => $productId,
-            'pattern_id'   => $patternId,
-            'variation_id' => $variationId,
-            'qr_image'     => $b64,
-            'generated_at' => $now,
-        ];
+        $this->db->transComplete();
+
+        // Re-fetch (handles race: another process may have inserted first)
+        return $this->db->query(
+            'SELECT * FROM qr_codes WHERE product_id=? AND pattern_id=? AND variation_id=?',
+            [$productId, $patternId, $variationId]
+        )->getRowArray();
     }
 
     public function index()
@@ -644,7 +646,18 @@ class Stock extends BaseController
             )->getRowArray();
 
             if (!$row) {
-                $errors[] = "Item #{$productId} not found at this location";
+                $label = $this->db->query(
+                    'SELECT p.sku, p.name AS pname, pp.name AS patname, pp.is_default, v.size, v.name AS vname
+                     FROM product p
+                     JOIN product_pattern pp ON pp.id = ?
+                     JOIN variation v        ON v.id  = ?
+                     WHERE p.id = ?',
+                    [$patternId, $variationId, $productId]
+                )->getRowArray();
+                $errLabel = $label
+                    ? (($label['sku'] ?: $label['pname']) . ' — ' . ($label['is_default'] ? 'Default' : $label['patname']) . ' — ' . ($label['size'] ? $label['size'].'"' : $label['vname']))
+                    : "Product #{$productId}";
+                $errors[] = "{$errLabel}: no stock at this location — please add stock first";
                 continue;
             }
             if ($row['qty'] < $qty) {
@@ -664,5 +677,121 @@ class Stock extends BaseController
         }
 
         return $this->response->setJSON(['success' => true, 'deducted' => $deducted, 'errors' => $errors]);
+    }
+
+    public function fixQrDupes()
+    {
+        // Step 1: Remove duplicates — keep lowest qr_number per (product, pattern, variation)
+        $this->db->query(
+            'DELETE qc1 FROM qr_codes qc1
+             INNER JOIN qr_codes qc2
+               ON  qc2.product_id   = qc1.product_id
+               AND qc2.pattern_id   = qc1.pattern_id
+               AND qc2.variation_id = qc1.variation_id
+               AND qc2.qr_number    < qc1.qr_number'
+        );
+        $deleted = $this->db->affectedRows();
+
+        // Step 2: Add unique constraint (ignore error if already exists)
+        $constraintStatus = 'already exists';
+        try {
+            $this->db->query(
+                'ALTER TABLE qr_codes ADD UNIQUE KEY uq_prod_pat_var (product_id, pattern_id, variation_id)'
+            );
+            $constraintStatus = 'added';
+        } catch (\Throwable $e) {
+            // Duplicate key name — constraint already exists, that's fine
+        }
+
+        return $this->response->setJSON([
+            'success'    => true,
+            'deleted'    => $deleted,
+            'constraint' => $constraintStatus,
+            'message'    => "Cleanup done. {$deleted} duplicate rows removed. Unique constraint: {$constraintStatus}.",
+        ]);
+    }
+
+    public function bulkGenerateQr()
+    {
+        $productIds = $this->request->getPost('product_ids') ?? [];
+        if (empty($productIds)) {
+            $all        = $this->db->query('SELECT id FROM product')->getResultArray();
+            $productIds = array_column($all, 'id');
+        }
+
+        $created  = 0;
+        $existing = 0;
+
+        foreach ($productIds as $productId) {
+            $productId = (int)$productId;
+
+            $patterns = $this->db->query(
+                'SELECT id FROM product_pattern WHERE product_id = ?', [$productId]
+            )->getResultArray();
+            if (empty($patterns)) continue;
+
+            $ptRow = $this->db->query(
+                'SELECT pt.variations FROM product p JOIN product_type pt ON pt.id = p.product_type_id WHERE p.id = ?',
+                [$productId]
+            )->getRowArray();
+            if (!$ptRow || empty($ptRow['variations'])) continue;
+
+            $varIds = array_filter(array_map('intval', explode(',', $ptRow['variations'])));
+            if (empty($varIds)) continue;
+
+            foreach ($patterns as $pat) {
+                foreach ($varIds as $varId) {
+                    $check = $this->db->query(
+                        'SELECT id FROM qr_codes WHERE product_id=? AND pattern_id=? AND variation_id=?',
+                        [$productId, $pat['id'], $varId]
+                    )->getRowArray();
+
+                    if ($check) {
+                        $existing++;
+                    } else {
+                        $this->getOrCreateQr($productId, (int)$pat['id'], $varId);
+                        $created++;
+                    }
+                }
+            }
+        }
+
+        return $this->response->setJSON([
+            'success'  => true,
+            'created'  => $created,
+            'existing' => $existing,
+            'message'  => "Done! {$created} new QR codes created, {$existing} already existed.",
+        ]);
+    }
+
+    public function qrRegistry()
+    {
+        $q         = $this->request->getGet('q');
+        $productId = (int)$this->request->getGet('product_id');
+
+        $sql = 'SELECT qc.qr_number, qc.generated_at,
+                       p.name AS product_name, p.sku,
+                       pp.name AS pattern_name, pp.is_default,
+                       v.name  AS variation_name, v.size
+                FROM qr_codes qc
+                JOIN product         p  ON p.id  = qc.product_id
+                JOIN product_pattern pp ON pp.id = qc.pattern_id
+                JOIN variation       v  ON v.id  = qc.variation_id
+                WHERE 1=1';
+        $binds = [];
+        if ($q) {
+            $sql .= ' AND (p.name LIKE ? OR p.sku LIKE ? OR qc.qr_number LIKE ?)';
+            $binds = array_merge($binds, ["%$q%", "%$q%", "%$q%"]);
+        }
+        if ($productId) {
+            $sql .= ' AND qc.product_id = ?';
+            $binds[] = $productId;
+        }
+        $sql .= ' ORDER BY qc.qr_number';
+
+        $rows     = $this->db->query($sql, $binds)->getResultArray();
+        $products = $this->db->query('SELECT id, name, sku FROM product ORDER BY name')->getResultArray();
+        $title    = 'QR Code Registry';
+        return view('stock/qr_registry', compact('rows', 'products', 'q', 'productId', 'title'));
     }
 }
