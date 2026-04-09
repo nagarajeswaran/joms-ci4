@@ -199,6 +199,8 @@ $routes->get('karigar/edit/(:num)', 'Karigar::edit/$1');
 $routes->post('karigar/update/(:num)', 'Karigar::update/$1');
 $routes->get('karigar/delete/(:num)', 'Karigar::delete/$1');
 $routes->post('karigar/get-info', 'Karigar::getInfo');
+$routes->post('karigar/(:num)/charge-rule/store', 'Karigar::storeChargeRule/$1');
+$routes->get('karigar/charge-rule/(:num)/delete', 'Karigar::deleteChargeRule/$1');
 
 // Raw Material Types
 $routes->get('raw-material-types', 'RawMaterialType::index');
@@ -233,7 +235,13 @@ $routes->post('raw-materials/store', 'RawMaterialStock::store');
 $routes->get('raw-materials/delete/(:num)', 'RawMaterialStock::delete/$1');
 
 // Gatti Stock
-$routes->get('gatti-stock', 'GattiStock::index');
+$routes->get('gatti-stock',                      'GattiStock::index');
+$routes->get('gatti-stock/view/(:num)',           'GattiStock::view/$1');
+$routes->post('gatti-stock/(:num)/update',        'GattiStock::update/$1');
+$routes->get('gatti-stock/entry',                 'GattiStock::stockEntry');
+$routes->post('gatti-stock/entry/save',           'GattiStock::saveEntry');
+$routes->post('gatti-stock/log/(:num)/update',    'GattiStock::updateLogEntry/$1');
+$routes->get('gatti-stock/log/(:num)/delete',     'GattiStock::deleteLogEntry/$1');
 
 // Byproduct Stock
 $routes->get('byproducts', 'ByproductStock::index');
@@ -251,6 +259,7 @@ $routes->get('part-stock/serial-settings', 'PartBatch::serialSettings');
 $routes->post('part-stock/save-serial-settings', 'PartBatch::saveSerialSettings');
 $routes->get('part-stock/lookup-batch', 'PartBatch::lookupBatch');
 $routes->get( 'part-stock/entry',                        'PartBatch::stockEntry');
+$routes->post('part-stock/entry/save',                   'PartBatch::saveEntryByBatchNumber');
 $routes->get( 'part-stock/stock-log/(:num)/edit',        'PartBatch::editStockEntry/$1');
 $routes->post('part-stock/stock-log/(:num)/update',      'PartBatch::updateStockEntry/$1');
 $routes->get( 'part-stock/stock-log/(:num)/delete',      'PartBatch::deleteStockEntry/$1');
@@ -274,10 +283,15 @@ $routes->get('part-orders/create', 'PartOrder::create');
 $routes->post('part-orders/store', 'PartOrder::store');
 $routes->get('part-orders/view/(:num)', 'PartOrder::view/$1');
 $routes->post('part-orders/add-issue/(:num)', 'PartOrder::addIssue/$1');
+$routes->post('part-orders/issue/(:num)/update',   'PartOrder::updateIssue/$1');
 $routes->get('part-orders/delete-issue/(:num)', 'PartOrder::deleteIssue/$1');
 $routes->post('part-orders/add-receive/(:num)', 'PartOrder::addReceive/$1');
+$routes->post('part-orders/receive/(:num)/update', 'PartOrder::updateReceive/$1');
 $routes->get('part-orders/delete-receive/(:num)', 'PartOrder::deleteReceive/$1');
 $routes->post('part-orders/post/(:num)', 'PartOrder::post/$1');
+$routes->post('part-orders/(:num)/save-charge-overrides', 'PartOrder::saveChargeOverrides/$1');
+$routes->get('part-orders/(:num)/reset-charge-overrides', 'PartOrder::resetChargeOverrides/$1');
+$routes->post('part-orders/(:num)/update-notes', 'PartOrder::updateNotes/$1');
 
 // Karigar Ledger
 $routes->get('karigar-ledger', 'KarigarLedger::index');

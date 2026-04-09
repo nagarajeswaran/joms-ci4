@@ -1,6 +1,6 @@
 <?= $this->extend('layouts/main') ?>
 <?= $this->section('content') ?>
-<div class="card" style="max-width:600px">
+<div class="card" style="max-width:750px">
 <div class="card-header"><strong><?= esc($title) ?></strong></div>
 <div class="card-body">
 <form method="post" action="<?= isset($item) ? base_url('karigar/update/'.$item['id']) : base_url('karigar/store') ?>">
@@ -39,6 +39,143 @@
 <button type="submit" class="btn btn-primary">Save</button>
 <a href="<?= base_url('karigar') ?>" class="btn btn-secondary ms-2">Cancel</a>
 </form>
+
+<?php if (isset($item)): ?>
+<hr class="mt-4">
+<h6>Making Charge Rules</h6>
+
+<?php if (!empty($chargeRules)): ?>
+<table class="table table-sm table-bordered mb-3">
+<thead class="table-dark">
+<tr><th>Basis</th><th>Filter</th><th>Fine%</th><th>Cash &#8377;/kg</th><th>Notes</th><th></th></tr>
+</thead>
+<tbody>
+<?php foreach ($chargeRules as $rule):
+    $fids = $rule['filter_ids'] ? json_decode($rule['filter_ids'], true) : [];
+    $filterLabel = 'All';
+    if ($rule['filter_type'] === 'by_part') {
+        $names = [];
+        foreach ($parts as $p) { if (in_array((int)$p['id'], $fids)) $names[] = esc($p['name']); }
+        $filterLabel = 'Parts: '.implode(', ', $names);
+    } elseif ($rule['filter_type'] === 'by_gatti') {
+        $names = [];
+        foreach ($gattiList as $g) { if (in_array((int)$g['id'], $fids)) $names[] = esc($g['label']); }
+        $filterLabel = 'Gatti: '.implode(', ', $names);
+    }
+?>
+<tr>
+    <td><?= ucwords(str_replace('_', ' ', $rule['basis'])) ?></td>
+    <td><?= $filterLabel ?></td>
+    <td><?= $rule['fine_pct'] > 0 ? $rule['fine_pct'].'%' : '-' ?></td>
+    <td><?= $rule['cash_rate_per_kg'] > 0 ? '&#8377;'.number_format($rule['cash_rate_per_kg'],2) : '-' ?></td>
+    <td><?= esc($rule['notes'] ?? '') ?></td>
+    <td><a href="<?= base_url('karigar/charge-rule/'.$rule['id'].'/delete') ?>" class="btn btn-sm btn-outline-danger" onclick="return confirm('Delete rule?')">Del</a></td>
+</tr>
+<?php endforeach; ?>
+</tbody>
+</table>
+<?php else: ?>
+<p class="text-muted small">No charge rules yet. Add one below.</p>
+<?php endif; ?>
+
+<div class="card bg-light mb-2">
+<div class="card-body">
+<strong class="d-block mb-2">Add Rule</strong>
+<form method="post" action="<?= base_url('karigar/'.$item['id'].'/charge-rule/store') ?>">
+<?= csrf_field() ?>
+<input type="hidden" name="filter_type" id="hiddenFilterType" value="none">
+
+<div class="row g-2 mb-3">
+    <div class="col-md-5">
+        <label class="form-label form-label-sm">Basis *</label>
+        <select name="basis" class="form-select form-select-sm" id="ruleBasis" onchange="updateRuleFilter()" required>
+            <option value="issued_all">Issued — All (Gatti + Parts)</option>
+            <option value="issued_gatti_only">Issued — Gatti Only</option>
+            <option value="issued_filtered">Issued — Specific Parts (issued to karigar as parts)</option>
+            <option value="received_all">Received — All</option>
+            <option value="received_filtered">Received — Specific Parts</option>
+        </select>
+    </div>
+    <div class="col">
+        <label class="form-label form-label-sm">Fine %</label>
+        <input type="number" step="0.0001" name="fine_pct" class="form-control form-control-sm" value="0" min="0">
+    </div>
+    <div class="col">
+        <label class="form-label form-label-sm">Cash &#8377;/kg</label>
+        <input type="number" step="0.01" name="cash_rate_per_kg" class="form-control form-control-sm" value="0" min="0">
+    </div>
+    <div class="col-md-3">
+        <label class="form-label form-label-sm">Notes</label>
+        <input type="text" name="notes" class="form-control form-control-sm" placeholder="Optional">
+    </div>
+</div>
+
+<!-- PARTS GRID (issued_filtered or received_filtered) -->
+<div id="partsGrid" style="display:none" class="mb-3">
+    <label class="form-label form-label-sm fw-semibold" id="partsGridLabel">Select Parts</label>
+    <input type="text" class="form-control form-control-sm mb-2" placeholder="Search part name..." oninput="filterGrid('partsTable', this.value)">
+    <div style="max-height:200px;overflow-y:auto;border:1px solid #dee2e6;border-radius:4px;">
+    <table class="table table-sm table-hover mb-0" id="partsTable">
+    <thead class="table-secondary sticky-top"><tr>
+        <th style="width:36px"><input type="checkbox" class="form-check-input" onchange="toggleAll('partsTable',this)"></th>
+        <th>Part Name</th>
+    </tr></thead>
+    <tbody>
+    <?php foreach ($parts ?? [] as $p): ?>
+    <tr>
+        <td><input type="checkbox" class="form-check-input" name="filter_ids[]" value="<?= $p['id'] ?>"></td>
+        <td><?= esc($p['name']) ?></td>
+    </tr>
+    <?php endforeach; ?>
+    </tbody>
+    </table>
+    </div>
+</div>
+
+<button type="submit" class="btn btn-sm btn-primary">Add Rule</button>
+</form>
 </div>
 </div>
+<?php endif; ?>
+
+</div>
+</div>
+<?= $this->endSection() ?>
+<?= $this->section('scripts') ?>
+<script>
+function updateRuleFilter() {
+    var basis = document.getElementById('ruleBasis').value;
+    var partsGrid = document.getElementById('partsGrid');
+    var label     = document.getElementById('partsGridLabel');
+    var hiddenFT  = document.getElementById('hiddenFilterType');
+
+    document.querySelectorAll('#partsTable input[type=checkbox]').forEach(function(c){ c.checked=false; });
+
+    if (basis === 'issued_filtered') {
+        partsGrid.style.display = '';
+        label.textContent = 'Select Parts (that are issued to this karigar)';
+        hiddenFT.value = 'by_part';
+    } else if (basis === 'received_filtered') {
+        partsGrid.style.display = '';
+        label.textContent = 'Select Parts (received from this karigar)';
+        hiddenFT.value = 'by_part';
+    } else {
+        partsGrid.style.display = 'none';
+        hiddenFT.value = 'none';
+    }
+}
+
+function filterGrid(tableId, query) {
+    var q = query.toLowerCase();
+    document.querySelectorAll('#' + tableId + ' tbody tr').forEach(function(row) {
+        row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
+    });
+}
+
+function toggleAll(tableId, master) {
+    document.querySelectorAll('#' + tableId + ' tbody input[type=checkbox]').forEach(function(c) {
+        if (c.closest('tr').style.display !== 'none') c.checked = master.checked;
+    });
+}
+</script>
 <?= $this->endSection() ?>

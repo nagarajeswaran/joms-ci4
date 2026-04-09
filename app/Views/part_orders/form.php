@@ -6,17 +6,22 @@
 <form method="post" action="<?= base_url('part-orders/store') ?>">
 <?= csrf_field() ?>
 <div class="mb-3">
-    <label class="form-label">Karigar *</label>
-    <select name="karigar_id" class="form-select" required onchange="fillRates(this)">
-        <option value="">-- Select --</option>
-        <?php foreach ($karigars as $k): ?>
-        <option value="<?= $k['id'] ?>" data-cash="<?= $k['default_cash_rate'] ?>" data-fine="<?= $k['default_fine_pct'] ?>"><?= esc($k['name']) ?></option>
+    <label class="form-label">Department <small class="text-muted">(filter karigar)</small></label>
+    <select id="deptFilter" class="form-select" onchange="filterKarigars(this.value)">
+        <option value="">-- All Departments --</option>
+        <?php foreach ($departments as $d): ?>
+        <option value="<?= $d['id'] ?>"><?= esc($d['name']) ?></option>
         <?php endforeach; ?>
     </select>
 </div>
-<div class="row">
-    <div class="col mb-3"><label class="form-label">Cash Rate (Rs/kg)</label><input type="number" step="0.01" name="cash_rate_per_kg" id="cashRate" class="form-control" value="0"></div>
-    <div class="col mb-3"><label class="form-label">Fine %</label><input type="number" step="0.0001" name="fine_pct" id="finePct" class="form-control" value="0"></div>
+<div class="mb-3">
+    <label class="form-label">Karigar *</label>
+    <select name="karigar_id" id="karigarSel" class="form-select" required>
+        <option value="">-- Select --</option>
+        <?php foreach ($karigars as $k): ?>
+        <option value="<?= $k['id'] ?>" data-dept="<?= $k['department_id'] ?>"><?= esc($k['name']) ?><?= $k['dept_name'] ? ' ('.$k['dept_name'].')' : '' ?></option>
+        <?php endforeach; ?>
+    </select>
 </div>
 <div class="mb-3">
     <label class="form-label">Link to Client Order (optional)</label>
@@ -36,10 +41,13 @@
 <?= $this->endSection() ?>
 <?= $this->section('scripts') ?>
 <script>
-function fillRates(sel) {
-    var opt = sel.options[sel.selectedIndex];
-    document.getElementById('cashRate').value = opt.dataset.cash || 0;
-    document.getElementById('finePct').value  = opt.dataset.fine || 0;
+function filterKarigars(deptId) {
+    var sel  = document.getElementById('karigarSel');
+    sel.value = '';
+    Array.from(sel.options).forEach(function(opt) {
+        if (!opt.value) { opt.style.display = ''; return; }
+        opt.style.display = (!deptId || opt.dataset.dept == deptId) ? '' : 'none';
+    });
 }
 </script>
 <?= $this->endSection() ?>

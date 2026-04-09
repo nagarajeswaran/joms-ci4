@@ -13,6 +13,7 @@ class PartBatch extends BaseController
             ->select('pb.*, p.name as part_name, p.tamil_name as part_tamil, s.name as stamp_name')
             ->join('part p', 'p.id = pb.part_id', 'left')
             ->join('stamp s', 's.id = pb.stamp_id', 'left')
+            ->where('EXISTS (SELECT 1 FROM part_batch_stock_log pbl WHERE pbl.part_batch_id = pb.id)', null, false)
             ->orderBy('pb.created_at', 'DESC');
 
         if ($partFilter)  $builder->where('pb.part_id', $partFilter);
@@ -59,15 +60,20 @@ class PartBatch extends BaseController
         $parts   = $db->query('SELECT id, name FROM part ORDER BY name')->getResultArray();
         $batchNo = trim($this->request->getGet('batch') ?? '');
         $batch   = null;
+        $newBatch = false;
         if ($batchNo) {
             $batch = $db->query('SELECT pb.*, p.name as part_name, p.tamil_name as part_tamil, s.name as stamp_name FROM part_batch pb LEFT JOIN part p ON p.id = pb.part_id LEFT JOIN stamp s ON s.id = pb.stamp_id WHERE pb.batch_number = ?', [$batchNo])->getRowArray();
+            if (!$batch) {
+                $newBatch = true;
+            }
         }
         return view('part_batch/stock_entry', [
-            'title'   => 'Stock Entry',
-            'stamps'  => $stamps,
-            'parts'   => $parts,
-            'batch'   => $batch,
-            'batchNo' => $batchNo,
+            'title'    => 'Stock Entry',
+            'stamps'   => $stamps,
+            'parts'    => $parts,
+            'batch'    => $batch,
+            'batchNo'  => $batchNo,
+            'newBatch' => $newBatch,
         ]);
     }
 
@@ -342,5 +348,87 @@ class PartBatch extends BaseController
         $db->query('UPDATE batch_serial_config SET prefix = ?, last_number = ?, max_number = ?, updated_at = NOW() WHERE id = 1', [$prefix, $lastNumber, $maxNumber]);
 
         return redirect()->to('part-stock/serial-settings')->with('success', 'Serial settings saved.');
+    }
+
+    public function saveEntryByBatchNumber()
+    {
+        $db        = \Config\Database::connect();
+        $batchNo   = trim($this->request->getPost('batch_number') ?? '');
+        $entryType = $this->request->getPost('entry_type');
+        $weightG   = (float)$this->request->getPost('weight_g');
+        $pcWeightG = (float)($this->request->getPost('piece_weight_g') ?? 0);
+        $pcs       = (int)$this->request->getPost('pcs');
+
+        if (!$batchNo) {
+            return redirect()->to('part-stock/entry')->with('error', 'Batch number is required');
+        }
+
+        // Weight is primary; back-calc from pcs if needed
+        if ($weightG <= 0 && $pcs > 0 && $pcWeightG > 0) {
+            $weightG = round($pcs * $pcWeightG, 4);
+        }
+        if ($weightG <= 0) {
+            return redirect()->to('part-stock/entry?batch=' . urlencode($batchNo))->with('error', 'Weight must be greater than 0');
+        }
+
+        // Look up or auto-create the batch
+        $batch = $db->query('SELECT * FROM part_batch WHERE batch_number = ?', [$batchNo])->getRowArray();
+
+        if (!$batch) {
+            $partId = (int)($this->request->getPost('part_id') ?? 0) ?: null;
+            try {
+                $db->table('part_batch')->insert([
+                    'batch_number'     => $batchNo,
+                    'part_id'          => $partId,
+                    'touch_pct'        => (float)($this->request->getPost('touch_pct') ?? 0),
+                    'weight_in_stock_g'=> 0,
+                    'qty_in_stock'     => 0,
+                    'created_at'       => date('Y-m-d H:i:s'),
+                ]);
+            } catch (\Exception $e) {
+                return redirect()->to('part-stock/entry?batch=' . urlencode($batchNo))->with('error', 'Batch number already exists or could not be created');
+            }
+            $batch = $db->query('SELECT * FROM part_batch WHERE batch_number = ?', [$batchNo])->getRowArray();
+        }
+
+        $id = $batch['id'];
+
+        if ($entryType === 'out' && $weightG > (float)$batch['weight_in_stock_g']) {
+            return redirect()->to('part-stock/entry?batch=' . urlencode($batchNo))->with('error', 'Cannot remove ' . $weightG . 'g — only ' . $batch['weight_in_stock_g'] . 'g in stock');
+        }
+
+        $delta = $entryType === 'out' ? -$weightG : $weightG;
+        $db->query('UPDATE part_batch SET weight_in_stock_g = GREATEST(0, weight_in_stock_g + ?), qty_in_stock = ROUND(GREATEST(0, weight_in_stock_g + ?) / NULLIF(piece_weight_g, 0)) WHERE id = ?', [$delta, $delta, $id]);
+
+        // Stamp locked once set
+        $stampId = $batch['stamp_id'] ?: ($this->request->getPost('stamp_id') ?: null);
+        if (!$batch['stamp_id'] && $stampId) {
+            $db->query('UPDATE part_batch SET stamp_id = ? WHERE id = ?', [$stampId, $id]);
+        }
+
+        // Allow part_id update if different
+        $postedPartId = (int)($this->request->getPost('part_id') ?? 0);
+        if ($postedPartId > 0 && $postedPartId !== (int)$batch['part_id']) {
+            $db->query('UPDATE part_batch SET part_id = ? WHERE id = ?', [$postedPartId, $id]);
+        }
+
+        // pc_weight: prefer posted, fall back to batch
+        $pcWeightG = $pcWeightG ?: (float)($batch['piece_weight_g'] ?? 0);
+
+        $db->table('part_batch_stock_log')->insert([
+            'part_batch_id'  => $id,
+            'entry_type'     => $entryType,
+            'reason'         => $this->request->getPost('reason') ?? 'manual',
+            'weight_g'       => $weightG,
+            'qty'            => $pcWeightG > 0 ? (int)round($weightG / $pcWeightG) : $pcs,
+            'piece_weight_g' => $pcWeightG ?: null,
+            'touch_pct'      => (float)($this->request->getPost('touch_pct') ?? 0),
+            'stamp_id'       => $stampId,
+            'notes'          => $this->request->getPost('notes') ?: null,
+            'created_at'     => date('Y-m-d H:i:s'),
+        ]);
+
+        $action = $entryType === 'out' ? 'Removed' : 'Added';
+        return redirect()->to('part-stock/entry?batch=' . urlencode($batchNo))->with('success', $action . ' ' . number_format($weightG, 4) . 'g successfully');
     }
 }

@@ -3,7 +3,7 @@
 <div class="d-flex justify-content-between align-items-center mb-3">
     <div>
         <h5 class="mb-0"><?= esc($po['order_number']) ?></h5>
-        <small class="text-muted">Karigar: <strong><?= esc($po['karigar_name']) ?></strong> (<?= esc($po['dept_name'] ?? '') ?>) | Cash: Rs<?= number_format($po['cash_rate_per_kg'],2) ?>/kg | Fine: <?= $po['fine_pct'] ?>%</small>
+        <small class="text-muted">Karigar: <strong><?= esc($po['karigar_name']) ?></strong><?= ($po['dept_name'] ?? '') ? ' ('.esc($po['dept_name']).')' : '' ?> | <?= $hasChargeRules ? '<span class="badge bg-info text-dark">Rules-based charges</span>' : 'Flat-rate charges' ?></small>
     </div>
     <span class="badge <?= $po['status']==='posted'?'bg-success':'bg-warning text-dark' ?> fs-6"><?= ucfirst($po['status']) ?></span>
 </div>
@@ -11,7 +11,7 @@
 <!-- ISSUED -->
 <div class="card mb-3">
 <div class="card-header d-flex justify-content-between">
-    <strong>Gatti Issued</strong>
+    <strong>Issued (Gatti / Parts)</strong>
     <?php if ($po['status']==='draft'): ?>
     <button class="btn btn-outline-secondary btn-sm" onclick="toggleForm('issueForm')">+ Add Issue</button>
     <?php endif; ?>
@@ -20,24 +20,56 @@
 <div id="issueForm" style="display:none" class="card-body border-bottom bg-light">
 <form method="post" action="<?= base_url('part-orders/add-issue/'.$po['id']) ?>">
 <?= csrf_field() ?>
+<!-- Type toggle -->
+<div class="mb-2">
+    <div class="btn-group btn-group-sm" role="group">
+        <input type="radio" class="btn-check" name="issue_type" id="typeGatti" value="gatti" checked onchange="switchIssueType('gatti')">
+        <label class="btn btn-outline-primary" for="typeGatti">Gatti</label>
+        <input type="radio" class="btn-check" name="issue_type" id="typePart" value="part" onchange="switchIssueType('part')">
+        <label class="btn btn-outline-primary" for="typePart">Part</label>
+    </div>
+</div>
+<!-- Gatti fields -->
+<div id="gattiFields">
 <div class="row g-2">
     <div class="col">
-        <select name="gatti_stock_id" class="form-select form-select-sm" required onchange="fillGattiTouch(this)">
+        <select name="gatti_stock_id" id="gattiSel" class="form-select form-select-sm" onchange="fillGattiTouch(this)">
             <option value="">-- Select Gatti --</option>
             <?php foreach ($gattiStock as $g): ?>
-            <option value="<?= $g['id'] ?>" data-touch="<?= $g['touch_pct'] ?>">
-                <?= esc($g['job_number'] ?? 'Manual') ?> | <?= number_format($g['weight_g']-$g['qty_issued_g'],2) ?>g avail | <?= $g['touch_pct'] ?>%
+            <?php $avail = number_format($g['weight_g']-$g['qty_issued_g'],2); ?>
+            <?php $label = $g['batch_number'] ?? ($g['job_number'] ?? 'ID #'.$g['id']); ?>
+            <option value="<?= $g['id'] ?>" data-touch="<?= $g['touch_pct'] ?>" data-stamp="<?= esc($g['stamp_name'] ?? '') ?>">
+                <?= esc($label) ?> | <?= $avail ?>g avail | <?= $g['touch_pct'] ?>% | Stamp: <?= esc($g['stamp_name'] ?? '-') ?>
             </option>
             <?php endforeach; ?>
         </select>
     </div>
-    <div class="col-auto"><input type="number" step="0.0001" name="weight_g" class="form-control form-control-sm" placeholder="Weight (g)" required></div>
     <div class="col-auto">
-        <select name="stamp_id" class="form-select form-select-sm">
+        <select name="stamp_id" class="form-select form-select-sm" id="issueStamp">
             <option value="">Stamp (opt)</option>
             <?php foreach ($stamps as $s): ?><option value="<?= $s['id'] ?>"><?= esc($s['name']) ?></option><?php endforeach; ?>
         </select>
     </div>
+</div>
+</div>
+<!-- Part fields -->
+<div id="partFields" style="display:none">
+<div class="row g-2">
+    <div class="col">
+        <select name="part_batch_id" id="partBatchSel" class="form-select form-select-sm">
+            <option value="">-- Select Part Batch --</option>
+            <?php foreach ($partBatches as $pb): ?>
+            <option value="<?= $pb['id'] ?>" data-touch="<?= $pb['touch_pct'] ?>">
+                <?= esc($pb['part_name']) ?> | Batch: <?= esc($pb['batch_number'] ?? '-') ?> | <?= number_format($pb['weight_in_stock_g'],2) ?>g avail | <?= $pb['touch_pct'] ?>%
+            </option>
+            <?php endforeach; ?>
+        </select>
+    </div>
+</div>
+</div>
+<!-- Shared weight input -->
+<div class="row g-2 mt-1">
+    <div class="col-auto"><input type="number" step="0.0001" name="weight_g" id="issueWeight" class="form-control form-control-sm" placeholder="Weight (g)" required style="width:140px"></div>
     <div class="col-auto"><button type="submit" class="btn btn-primary btn-sm">Add</button></div>
 </div>
 </form>
@@ -45,24 +77,63 @@
 <?php endif; ?>
 <div class="card-body p-0">
 <table class="table table-sm table-bordered mb-0">
-<thead class="table-dark"><tr><th>Melt Job</th><th>Weight (g)</th><th>Touch%</th><th>Fine (g)</th><th>Stamp</th><th>Issued At</th><?php if ($po['status']==='draft'): ?><th></th><?php endif; ?></tr></thead>
+<thead class="table-dark"><tr><th>Type</th><th>Item</th><th>Weight (g)</th><th>Touch%</th><th>Fine (g)</th><th>Stamp</th><th>Issued At</th><?php if ($po['status']==='draft'): ?><th></th><?php endif; ?></tr></thead>
 <tbody>
 <?php foreach ($issues as $row): ?>
-<tr>
-    <td><?= esc($row['job_number'] ?? '-') ?></td>
+<tr id="issue-row-<?= $row['id'] ?>">
+    <td><span class="badge <?= $row['issue_type']==='part' ? 'bg-info text-dark' : 'bg-secondary' ?>"><?= $row['issue_type']==='part' ? 'Part' : 'Gatti' ?></span></td>
+    <td><?php
+        if ($row['issue_type'] === 'part') {
+            echo esc($row['issued_part_name'] ?? '-');
+            if ($row['issued_part_batch']) echo ' <small class="text-muted">('.esc($row['issued_part_batch']).')</small>';
+        } else {
+            echo esc($row['gatti_batch'] ?? ($row['job_number'] ?? '-'));
+        }
+    ?></td>
     <td><?= number_format($row['weight_g'],4) ?></td>
     <td><?= $row['touch_pct'] ?>%</td>
     <td><?= number_format($row['weight_g']*$row['touch_pct']/100,4) ?></td>
     <td><?= esc($row['stamp_name'] ?? '-') ?></td>
     <td><?= date('d/m/Y H:i', strtotime($row['issued_at'])) ?></td>
     <?php if ($po['status']==='draft'): ?>
-    <td><a href="<?= base_url('part-orders/delete-issue/'.$row['id']) ?>" class="btn btn-sm btn-outline-danger" onclick="return confirm('Delete?')">Del</a></td>
+    <td class="text-nowrap">
+        <button class="btn btn-sm btn-outline-warning" onclick="toggleEditIssue(<?= $row['id'] ?>, <?= $row['weight_g'] ?>, <?= $row['gatti_stock_id'] ?>)">Edit</button>
+        <a href="<?= base_url('part-orders/delete-issue/'.$row['id']) ?>" class="btn btn-sm btn-outline-danger" onclick="return confirm('Delete?')">Del</a>
+    </td>
     <?php endif; ?>
 </tr>
+<?php if ($po['status']==='draft'): ?>
+<tr id="issue-edit-<?= $row['id'] ?>" style="display:none" class="table-warning">
+    <td colspan="8">
+        <form method="post" action="<?= base_url('part-orders/issue/'.$row['id'].'/update') ?>" class="row g-2 align-items-center">
+        <?= csrf_field() ?>
+            <div class="col-auto"><input type="number" step="0.0001" name="weight_g" class="form-control form-control-sm" placeholder="Weight (g)" id="edit-issue-wt-<?= $row['id'] ?>" required style="width:130px"></div>
+            <div class="col-auto">
+                <select name="stamp_id" class="form-select form-select-sm" style="width:140px">
+                    <option value="">-- Stamp --</option>
+                    <?php foreach ($stamps as $s): ?>
+                    <option value="<?= $s['id'] ?>" <?= $s['id']==$row['stamp_id']?'selected':'' ?>><?= esc($s['name']) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <div class="col-auto"><button type="submit" class="btn btn-sm btn-warning">Update</button></div>
+            <div class="col-auto"><button type="button" class="btn btn-sm btn-outline-secondary" onclick="toggleEditIssue(<?= $row['id'] ?>)">Cancel</button></div>
+        </form>
+    </td>
+</tr>
+<?php endif; ?>
 <?php endforeach; ?>
-<?php if (!$issues): ?><tr><td colspan="7" class="text-center text-muted">No issues yet</td></tr><?php endif; ?>
+<?php if (!$issues): ?><tr><td colspan="8" class="text-center text-muted">No issues yet</td></tr><?php endif; ?>
 </tbody>
-<tfoot class="table-light"><tr><td colspan="3"><strong>Total Issued Fine</strong></td><td><strong><?= number_format($totalIssuedFine,4) ?>g</strong></td><td colspan="<?= $po['status']==='draft'?3:2 ?>"></td></tr></tfoot>
+<tfoot class="table-secondary fw-bold">
+<tr>
+    <td colspan="2">Totals</td>
+    <td class="text-end"><?= number_format($totalIssuedWeight,4) ?> g</td>
+    <td></td>
+    <td class="text-end"><?= number_format($totalIssuedFine,4) ?> g</td>
+    <td colspan="<?= $po['status']==='draft' ? 3 : 2 ?>"></td>
+</tr>
+</tfoot>
 </table>
 </div>
 </div>
@@ -100,6 +171,12 @@
     <div class="col-auto" id="pcWtDiv"><input type="number" step="0.0001" name="piece_weight_g" id="pcWt" class="form-control form-control-sm" placeholder="Pc Weight (g)" oninput="calcPcs()"></div>
     <div class="col-auto"><span class="form-control-plaintext form-control-sm" id="pcsCalc" style="min-width:80px">Pcs: -</span></div>
     <div class="col-auto"><input type="number" step="0.0001" name="touch_pct" class="form-control form-control-sm" placeholder="Touch%" value="0"></div>
+    <div class="col-auto">
+        <select name="stamp_id" class="form-select form-select-sm">
+            <option value="">Stamp (opt)</option>
+            <?php foreach ($stamps as $s): ?><option value="<?= $s['id'] ?>"><?= esc($s['name']) ?></option><?php endforeach; ?>
+        </select>
+    </div>
     <div class="col-auto"><button type="submit" class="btn btn-primary btn-sm">Add</button></div>
 </div>
 </form>
@@ -107,10 +184,10 @@
 <?php endif; ?>
 <div class="card-body p-0">
 <table class="table table-sm table-bordered mb-0">
-<thead class="table-dark"><tr><th>Type</th><th>Part / Byproduct</th><th>Batch No</th><th>Weight (g)</th><th>Pc Wt (g)</th><th>Pcs</th><th>Touch%</th><th>Fine (g)</th><?php if ($po['status']==='draft'): ?><th></th><?php endif; ?></tr></thead>
+<thead class="table-dark"><tr><th>Type</th><th>Part / Byproduct</th><th>Batch No</th><th>Weight (g)</th><th>Pc Wt (g)</th><th>Pcs</th><th>Touch%</th><th>Fine (g)</th><th>Stamp</th><?php if ($po['status']==='draft'): ?><th></th><?php endif; ?></tr></thead>
 <tbody>
 <?php foreach ($receives as $row): ?>
-<tr>
+<tr id="recv-row-<?= $row['id'] ?>">
     <td><?= ucfirst($row['receive_type']) ?></td>
     <td><?= $row['receive_type']==='part' ? esc($row['part_name']) : esc($row['byprod_name']) ?></td>
     <td><?= esc($row['batch_number'] ?? '-') ?></td>
@@ -119,29 +196,150 @@
     <td><?= $row['qty'] ?></td>
     <td><?= $row['touch_pct'] ?>%</td>
     <td><?= number_format($row['weight_g']*$row['touch_pct']/100,4) ?></td>
+    <td><?= esc($row['stamp_name'] ?? '-') ?></td>
     <?php if ($po['status']==='draft'): ?>
-    <td><a href="<?= base_url('part-orders/delete-receive/'.$row['id']) ?>" class="btn btn-sm btn-outline-danger" onclick="return confirm('Delete?')">Del</a></td>
+    <td class="text-nowrap">
+        <button class="btn btn-sm btn-outline-warning" onclick="toggleEditRecv(<?= $row['id'] ?>, <?= $row['weight_g'] ?>, <?= (float)($row['piece_weight_g']??0) ?>, <?= $row['touch_pct'] ?>)">Edit</button>
+        <a href="<?= base_url('part-orders/delete-receive/'.$row['id']) ?>" class="btn btn-sm btn-outline-danger" onclick="return confirm('Delete?')">Del</a>
+    </td>
     <?php endif; ?>
 </tr>
+<?php if ($po['status']==='draft'): ?>
+<tr id="recv-edit-<?= $row['id'] ?>" style="display:none" class="table-warning">
+    <td colspan="10">
+        <form method="post" action="<?= base_url('part-orders/receive/'.$row['id'].'/update') ?>" class="row g-2 align-items-center">
+        <?= csrf_field() ?>
+            <div class="col-auto"><input type="number" step="0.0001" name="weight_g" class="form-control form-control-sm" placeholder="Weight (g)" id="edit-recv-wt-<?= $row['id'] ?>" required style="width:130px"></div>
+            <div class="col-auto"><input type="number" step="0.0001" name="piece_weight_g" class="form-control form-control-sm" placeholder="Pc Wt (g)" id="edit-recv-pw-<?= $row['id'] ?>" style="width:120px"></div>
+            <div class="col-auto"><input type="number" step="0.0001" name="touch_pct" class="form-control form-control-sm" placeholder="Touch%" id="edit-recv-tp-<?= $row['id'] ?>" style="width:100px"></div>
+            <div class="col-auto"><button type="submit" class="btn btn-sm btn-warning">Update</button></div>
+            <div class="col-auto"><button type="button" class="btn btn-sm btn-outline-secondary" onclick="toggleEditRecv(<?= $row['id'] ?>)">Cancel</button></div>
+        </form>
+    </td>
+</tr>
+<?php endif; ?>
 <?php endforeach; ?>
-<?php if (!$receives): ?><tr><td colspan="9" class="text-center text-muted">No receives yet</td></tr><?php endif; ?>
+<?php if (!$receives): ?><tr><td colspan="10" class="text-center text-muted">No receives yet</td></tr><?php endif; ?>
 </tbody>
-<tfoot class="table-light"><tr><td colspan="3"><strong>Total Recv Fine</strong></td><td></td><td></td><td></td><td></td><td><strong><?= number_format($totalRecvFine,4) ?>g</strong></td><?php if ($po['status']==='draft'): ?><td></td><?php endif; ?></tr></tfoot>
+<tfoot class="table-secondary fw-bold">
+<tr>
+    <td colspan="3">Totals</td>
+    <td><?= number_format($totalRecvWeight,4) ?> g</td>
+    <td></td><td></td><td></td>
+    <td class="text-end"><?= number_format($totalRecvFine,4) ?> g</td>
+    <td></td><!-- Stamp -->
+    <?php if ($po['status']==='draft'): ?><td></td><?php endif; ?>
+</tr>
+</tfoot>
 </table>
 </div>
 </div>
 
-<!-- SUMMARY -->
-<div class="card mb-3" style="max-width:500px">
-<div class="card-header"><strong>Making Charge Summary</strong></div>
+<!-- SUMMARY + CHARGE OVERRIDE GRID -->
+<div class="row g-3 mb-3 align-items-start">
+
+<!-- LEFT: Summary -->
+<div class="col-md-4">
+<div class="card h-100">
+<div class="card-header"><strong>Making Charge Summary</strong><?= $hasOverrides ? ' <span class="badge bg-warning text-dark ms-1">Overridden</span>' : '' ?></div>
 <table class="table table-sm table-borderless mb-0">
 <tr><td>Total Issued Fine (g)</td><td class="text-end"><strong><?= number_format($totalIssuedFine,4) ?></strong></td></tr>
 <tr><td>Total Received Fine (g)</td><td class="text-end"><?= number_format($totalRecvFine,4) ?></td></tr>
-<tr class="table-warning"><td>Fine Difference (loss)</td><td class="text-end"><strong><?= number_format($fineDiff,4) ?></strong></td></tr>
-<tr><td>Making Charge Fine (<?= $po['fine_pct'] ?>% of <?= number_format($totalPartsWeight,4) ?>g parts)</td><td class="text-end"><?= number_format($mcFine,4) ?></td></tr>
-<tr class="table-danger"><td><strong>Net Fine Karigar Owes (g)</strong></td><td class="text-end"><strong><?= number_format($netFine,4) ?></strong></td></tr>
-<tr class="table-success"><td><strong>Cash Making Charge (Rs)</strong></td><td class="text-end"><strong><?= number_format($mcCash,2) ?></strong></td></tr>
+<tr class="table-warning"><td>Fine Difference</td><td class="text-end"><strong><?= number_format($fineDiff,4) ?></strong></td></tr>
+<tr><td>Total Making Charge Fine (g)</td><td class="text-end" id="sumMcFine"><?= number_format($mcFine,4) ?></td></tr>
+<tr class="table-danger"><td><strong>Net Fine Karigar Owes (g)</strong></td><td class="text-end" id="sumNetFine"><strong><?= number_format($netFine,4) ?></strong></td></tr>
+<tr class="table-success"><td><strong>Cash Making Charge (&#8377;)</strong></td><td class="text-end" id="sumMcCash"><strong><?= number_format($mcCash,2) ?></strong></td></tr>
 </table>
+</div>
+</div>
+
+<!-- RIGHT: Charge Calculation Override Grid -->
+<div class="col-md-8">
+<div class="card">
+<div class="card-header d-flex justify-content-between align-items-center">
+    <strong>Charge Calculation</strong>
+    <?php if ($po['status']==='draft' && $hasOverrides): ?>
+    <a href="<?= base_url('part-orders/'.$po['id'].'/reset-charge-overrides') ?>" class="btn btn-sm btn-outline-secondary" onclick="return confirm('Reset to auto-calculated values?')">Reset to Auto</a>
+    <?php endif; ?>
+</div>
+<form method="post" action="<?= base_url('part-orders/'.$po['id'].'/save-charge-overrides') ?>">
+<?= csrf_field() ?>
+<div class="table-responsive" style="overflow-y:visible;">
+<table class="table table-sm table-bordered mb-0" id="chargeGrid">
+<thead class="table-dark">
+<tr>
+    <th>Basis / Label</th>
+    <th>Weight (g)</th>
+    <th>Fine %</th>
+    <th>Cash &#8377;/kg</th>
+    <th class="text-end">Fine (g)</th>
+    <th class="text-end">Cash (&#8377;)</th>
+    <?php if ($po['status']==='draft'): ?><th></th><?php endif; ?>
+</tr>
+</thead>
+<tbody id="chargeGridBody">
+<?php foreach ($chargeBreakdown as $idx => $cb): ?>
+<tr data-row="<?= $idx ?>">
+    <td>
+        <input type="hidden" name="rule_id[]" value="<?= $cb['rule']['id'] ?>">
+        <?php if ($po['status']==='draft'): ?>
+        <input type="text" name="basis_label[]" class="form-control form-control-sm" value="<?= esc(ucwords(str_replace('_',' ',$cb['rule']['basis'])).($cb['rule']['notes'] ? ' – '.$cb['rule']['notes'] : '')) ?>" style="min-width:140px">
+        <?php else: ?>
+        <small><?= esc(ucwords(str_replace('_',' ',$cb['rule']['basis']))) ?><?= $cb['rule']['notes'] ? ' – '.esc($cb['rule']['notes']) : '' ?></small>
+        <?php endif; ?>
+    </td>
+    <?php if ($po['status']==='draft'): ?>
+    <td><input type="number" step="0.0001" name="weight_g[]" class="form-control form-control-sm" data-col="w" value="<?= number_format($cb['ov_weight'],4,'.','') ?>" style="width:110px" oninput="recalcRow(this)"></td>
+    <td><input type="number" step="0.0001" name="fine_pct[]" class="form-control form-control-sm" data-col="f" value="<?= number_format($cb['ov_fine_pct'],4,'.','') ?>" style="width:80px" oninput="recalcRow(this)"></td>
+    <td><input type="number" step="0.01"   name="cash_rate_per_kg[]" class="form-control form-control-sm" data-col="c" value="<?= number_format($cb['ov_cash'],2,'.','') ?>" style="width:80px" oninput="recalcRow(this)"></td>
+    <?php else: ?>
+    <td><?= number_format($cb['ov_weight'],4) ?></td>
+    <td><?= $cb['ov_fine_pct'] ?>%</td>
+    <td>&#8377;<?= number_format($cb['ov_cash'],2) ?></td>
+    <?php endif; ?>
+    <td class="text-end row-fine"><?= number_format($cb['ov_fine'],4) ?></td>
+    <td class="text-end row-cash"><?= number_format($cb['ov_cash_amt'],2) ?></td>
+    <?php if ($po['status']==='draft'): ?><td><button type="button" class="btn btn-sm btn-outline-danger" onclick="deleteRow(this)">✕</button></td><?php endif; ?>
+</tr>
+<?php endforeach; ?>
+</tbody>
+<tfoot class="table-secondary fw-bold">
+<tr>
+    <td colspan="4" class="text-end">Total</td>
+    <td class="text-end" id="footFine"><?= number_format($mcFine,4) ?></td>
+    <td class="text-end" id="footCash"><?= number_format($mcCash,2) ?></td>
+    <?php if ($po['status']==='draft'): ?><td></td><?php endif; ?>
+</tr>
+</tfoot>
+</table>
+</div>
+<?php if ($po['status']==='draft'): ?>
+<div class="card-footer d-flex gap-2 align-items-center">
+    <button type="submit" class="btn btn-sm btn-primary">Save</button>
+    <button type="button" class="btn btn-sm btn-outline-success" onclick="addRow()">+ Add Row</button>
+    <small class="text-muted ms-1">Totals update live as you type</small>
+</div>
+<?php endif; ?>
+</form>
+</div>
+</div>
+
+</div><!-- end row -->
+
+<!-- NARRATION / NOTES -->
+<div class="card mb-3">
+<div class="card-header"><strong>Narration / Notes</strong></div>
+<div class="card-body">
+<?php if ($po['status']==='draft'): ?>
+<form method="post" action="<?= base_url('part-orders/'.$po['id'].'/update-notes') ?>">
+<?= csrf_field() ?>
+<textarea name="notes" class="form-control form-control-sm mb-2" rows="3"><?= esc($po['notes'] ?? '') ?></textarea>
+<button type="submit" class="btn btn-sm btn-primary">Save Notes</button>
+</form>
+<?php else: ?>
+<p class="mb-0"><?= nl2br(esc($po['notes'] ?? '—')) ?></p>
+<?php endif; ?>
+</div>
 </div>
 
 <?php if ($po['status']==='draft'): ?>
@@ -154,7 +352,97 @@
 <?= $this->section('scripts') ?>
 <script>
 function toggleForm(id) { var el=document.getElementById(id); el.style.display=el.style.display===''?'none':''; }
-function fillGattiTouch(sel) {}
+
+function switchIssueType(type) {
+    document.getElementById('gattiFields').style.display = type === 'gatti' ? '' : 'none';
+    document.getElementById('partFields').style.display  = type === 'part'  ? '' : 'none';
+    document.getElementById('gattiSel').required = (type === 'gatti');
+    document.getElementById('partBatchSel').required = (type === 'part');
+}
+
+function recalcRow(input) {
+    var row  = input.closest('tr');
+    var w    = parseFloat(row.querySelector('[data-col=w]').value) || 0;
+    var f    = parseFloat(row.querySelector('[data-col=f]').value) || 0;
+    var c    = parseFloat(row.querySelector('[data-col=c]').value) || 0;
+    row.querySelector('.row-fine').textContent = (w * f / 100).toFixed(4);
+    row.querySelector('.row-cash').textContent = (w / 1000 * c).toFixed(2);
+    recalcTotals();
+}
+
+function recalcTotals() {
+    var totalFine = 0, totalCash = 0;
+    document.querySelectorAll('#chargeGridBody tr').forEach(function(row) {
+        totalFine += parseFloat(row.querySelector('.row-fine').textContent) || 0;
+        totalCash += parseFloat(row.querySelector('.row-cash').textContent) || 0;
+    });
+    document.getElementById('footFine').textContent = totalFine.toFixed(4);
+    document.getElementById('footCash').textContent = totalCash.toFixed(2);
+    var fineDiff = <?= $fineDiff ?>;
+    document.getElementById('sumMcFine').textContent  = totalFine.toFixed(4);
+    document.getElementById('sumNetFine').innerHTML   = '<strong>' + (fineDiff - totalFine).toFixed(4) + '</strong>';
+    document.getElementById('sumMcCash').innerHTML    = '<strong>' + totalCash.toFixed(2) + '</strong>';
+}
+
+function addRow() {
+    var tbody = document.getElementById('chargeGridBody');
+    var tr = document.createElement('tr');
+    tr.innerHTML =
+        '<td><input type="hidden" name="rule_id[]" value="">' +
+        '<input type="text" name="basis_label[]" class="form-control form-control-sm" placeholder="Label e.g. Issued Gatti" style="min-width:140px"></td>' +
+        '<td><input type="number" step="0.0001" name="weight_g[]" class="form-control form-control-sm" data-col="w" value="0" style="width:110px" oninput="recalcRow(this)"></td>' +
+        '<td><input type="number" step="0.0001" name="fine_pct[]" class="form-control form-control-sm" data-col="f" value="0" style="width:80px" oninput="recalcRow(this)"></td>' +
+        '<td><input type="number" step="0.01" name="cash_rate_per_kg[]" class="form-control form-control-sm" data-col="c" value="0" style="width:80px" oninput="recalcRow(this)"></td>' +
+        '<td class="text-end row-fine">0.0000</td>' +
+        '<td class="text-end row-cash">0.00</td>' +
+        '<td><button type="button" class="btn btn-sm btn-outline-danger" onclick="deleteRow(this)">✕</button></td>';
+    tbody.appendChild(tr);
+    tr.querySelector('input[name="basis_label[]"]').focus();
+}
+
+function deleteRow(btn) {
+    btn.closest('tr').remove();
+    recalcTotals();
+}
+
+function fillGattiTouch(sel) {
+    var opt = sel.options[sel.selectedIndex];
+    // auto-select stamp if available
+    var stampName = opt.getAttribute('data-stamp') || '';
+    var stampSel = document.getElementById('issueStamp');
+    if (stampSel && stampName) {
+        for (var i = 0; i < stampSel.options.length; i++) {
+            if (stampSel.options[i].text === stampName) { stampSel.selectedIndex = i; break; }
+        }
+    }
+}
+
+function toggleEditIssue(id, wt, gsId) {
+    var editRow = document.getElementById('issue-edit-' + id);
+    var wtInput = document.getElementById('edit-issue-wt-' + id);
+    if (editRow.style.display === 'none') {
+        editRow.style.display = '';
+        if (wtInput && wt !== undefined) wtInput.value = wt;
+    } else {
+        editRow.style.display = 'none';
+    }
+}
+
+function toggleEditRecv(id, wt, pw, tp) {
+    var editRow = document.getElementById('recv-edit-' + id);
+    var wtInput = document.getElementById('edit-recv-wt-' + id);
+    var pwInput = document.getElementById('edit-recv-pw-' + id);
+    var tpInput = document.getElementById('edit-recv-tp-' + id);
+    if (editRow.style.display === 'none') {
+        editRow.style.display = '';
+        if (wtInput && wt !== undefined) wtInput.value = wt;
+        if (pwInput && pw !== undefined) pwInput.value = pw || '';
+        if (tpInput && tp !== undefined) tpInput.value = tp;
+    } else {
+        editRow.style.display = 'none';
+    }
+}
+
 function toggleRecvType(sel) {
     var isPart = sel.value === 'part';
     document.getElementById('partDiv').style.display    = isPart ? '' : 'none';
