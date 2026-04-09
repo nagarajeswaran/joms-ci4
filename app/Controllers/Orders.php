@@ -310,13 +310,30 @@ class Orders extends BaseController
                 ];
             }
 
-            $mainPartId = $item['main_part_id'];
-            $kanniPerInch = isset($kanniMap[$mainPartId]) ? $kanniMap[$mainPartId]['kanni_per_inch'] : 12.0;
+            $mainPartId        = $item['main_part_id'];
+            $mainKanniPerInch  = isset($kanniMap[$mainPartId]) ? $kanniMap[$mainPartId]['kanni_per_inch'] : null;
+            $kanniPerInch      = $mainKanniPerInch ?? 12.0;
+
+            // Main Part Recompute — mirrors PATH 1 in partCalcDetail
+            if ($mainPartId && $mainKanniPerInch !== null) {
+                $sumLength = 0;
+                foreach ($varStats as $vs) $sumLength += $vs['total_length'];
+                if ($sumLength > 0) {
+                    $req = $sumLength * $mainKanniPerInch;
+                    if (!isset($aggregated[$mainPartId])) {
+                        $aggregated[$mainPartId] = ['part_pcs' => 0, 'podi_id' => null, 'podi_pcs' => 0, 'sum_length' => 0];
+                    }
+                    $aggregated[$mainPartId]['part_pcs']   += $req;
+                    $aggregated[$mainPartId]['sum_length']  = ($aggregated[$mainPartId]['sum_length'] ?? 0) + $sumLength;
+                }
+            }
 
             $effectiveBom = $this->_getEffectiveBom($item['product_id'], $item['pattern_id']);
 
             foreach ($effectiveBom as $bomRow) {
                 $partId  = $bomRow['part_id'];
+                // Skip main part — already handled by recompute above
+                if ((int)$partId === (int)$mainPartId && $mainKanniPerInch !== null) continue;
                 $partPcs = (float)($bomRow['part_pcs'] ?? 0);
                 $scale   = $bomRow['scale'] ?? '';
                 $vgRaw   = trim($bomRow['variation_group'] ?? '');
@@ -382,6 +399,8 @@ class Orders extends BaseController
 
             foreach ($cbomRows as $cbom) {
                 $partId  = $cbom['part_id'];
+                // Skip main part — already handled by recompute above
+                if ((int)$partId === (int)$mainPartId && $mainKanniPerInch !== null) continue;
                 $podiId  = $cbom['podi_id'] ?? null;
                 $cbomQtys = $this->db->query('SELECT * FROM product_customize_bill_of_material_quantity WHERE product_customize_bill_of_material_id = ?', [$cbom['id']])->getResultArray();
                 $partReq = 0;
@@ -421,6 +440,8 @@ class Orders extends BaseController
 
             // Apply pattern CBOM overrides for ADD and REPLACE (new entries not in base CBOM)
             foreach ($cbomOverride as $ovPartId => $varOverrides) {
+                // Skip main part — already handled by recompute above
+                if ((int)$ovPartId === (int)$mainPartId && $mainKanniPerInch !== null) continue;
                 foreach ($varOverrides as $ovVarId => $ov) {
                     if (!isset($qtyMap[$ovVarId])) continue;
                     $targetPartId = $ov['action'] === 'replace' ? (int)$ov['replace_part_id'] : $ovPartId;
@@ -2032,6 +2053,445 @@ class Orders extends BaseController
 
         $html .= '</body></html>';
         \App\Services\PdfService::make($html, 'order-sheet-' . $id . '.pdf');
+    }
+
+    public function orderSheetSlipPdf($id)
+    {
+        $order = $this->_getOrder($id);
+        if (!$order) return redirect()->to('orders')->with('error', 'Not found');
+        if ($order['status'] === 'draft') return redirect()->to('orders/view/' . $id)->with('error', 'Confirm order first');
+
+        $rawItems = $this->db->query('
+            SELECT oi.*, p.name as product_name, p.sku, p.main_part_id, p.image as product_image,
+                   pt.variations as pt_variations, pt.multiplication_factor,
+                   b.clasp_size,
+                   pp.name as pattern_name, pp.tamil_name as pattern_tamil_name, pp.pattern_code,
+                   s.name as stamp_name
+            FROM order_items oi
+            JOIN product p ON p.id = oi.product_id
+            LEFT JOIN product_type pt ON pt.id = p.product_type_id
+            LEFT JOIN body b ON b.id = p.body_id
+            LEFT JOIN product_pattern pp ON pp.id = oi.pattern_id
+            LEFT JOIN stamp s ON s.id = oi.stamp_id
+            WHERE oi.order_id = ?
+            ORDER BY oi.sort_order, oi.id
+        ', [$id])->getResultArray();
+
+        $items = [];
+        foreach ($rawItems as $item) {
+            $varIds = [];
+            if (!empty($item['pt_variations'])) {
+                $varIds = array_values(array_filter(array_map('trim', explode(',', $item['pt_variations']))));
+            }
+            $variations = [];
+            if ($varIds) {
+                $ph = implode(',', array_fill(0, count($varIds), '?'));
+                $variations = $this->db->query("SELECT * FROM variation WHERE id IN ($ph) ORDER BY group_name, size+0", $varIds)->getResultArray();
+            }
+            $qtyRows = $this->db->query('SELECT variation_id, quantity FROM order_item_qty WHERE order_item_id = ? AND quantity > 0', [$item['id']])->getResultArray();
+            $qtyMap = [];
+            foreach ($qtyRows as $q) $qtyMap[$q['variation_id']] = $q['quantity'];
+            $item['variations'] = $variations;
+            $item['qty_map']    = $qtyMap;
+            $items[] = $item;
+        }
+
+        $css = '
+            body { font-family: latha; font-size: 11px; color: #222; margin: 0; padding: 0; }
+            .slip { height: 96mm; overflow: hidden; box-sizing: border-box; padding: 3mm 4mm; }
+            .cut { border-top: 1px dashed #aaa; margin: 0; }
+            .slip-header { width: 100%; border-collapse: collapse; margin-bottom: 2mm; border-bottom: 1px solid #ddd; padding-bottom: 1mm; }
+            .slip-left   { width: 33%; vertical-align: top; text-align: left; }
+            .slip-centre { width: 34%; vertical-align: middle; text-align: center; }
+            .slip-right  { width: 33%; vertical-align: top; text-align: right; }
+            .slip-code-big { font-size: 13px; font-weight: bold; }
+            .slip-pattern-name { font-size: 13px; font-weight: bold; text-align: center; margin: 2mm 0 1mm 0; color: #111; }
+            .slip-serial-no { font-size: 13px; font-weight: 900; color: #000; margin-right: 2px; }
+            .slip-date   { font-size: 9px; color: #666; margin-top: 1mm; }
+            .slip-stamp  { font-size: 14px; font-weight: bold; color: #222; }
+            .slip-order-no { font-size: 12px; font-weight: bold; }
+            .slip-weight { font-size: 10px; color: #555; margin-top: 1mm; }
+            .slip-pcs    { font-size: 10px; color: #555; }
+            .slip-img { width: 100%; max-height: 40mm; object-fit: contain; display: block; margin-bottom: 2mm; }
+            .slip-page-no { font-size: 9px; color: #999; text-align: right; margin-top: 1mm; margin-bottom: 1mm; }
+            table { width: 100%; border-collapse: collapse; font-size: 10px; }
+            th, td { border: 2px solid #444; padding: 1mm 1.5mm; text-align: center; }
+            th { font-weight: bold; }
+            .g-even { background: #fde8c8; }
+            .g-odd  { background: #d4edda; }
+        ';
+
+        $html = '<html><head><meta charset="utf-8"><style>' . $css . '</style></head><body>';
+
+        $allVarCols = [];
+        $colTotals  = [];
+        $grandTotal = 0;
+        $totalItems = count($items);
+
+        foreach ($items as $idx => $item) {
+            $varsByGroup = [];
+            foreach ($item['variations'] as $v) $varsByGroup[$v['group_name']][] = $v;
+
+            $displayName = !empty($item['pattern_tamil_name'])
+                ? $item['pattern_tamil_name']
+                : (!empty($item['pattern_name']) ? $item['pattern_name'] : $item['product_name']);
+
+            $activeGroups = [];
+            foreach ($varsByGroup as $gName => $vars) {
+                $active = array_values(array_filter($vars, fn($v) => ($item['qty_map'][$v['id']] ?? 0) > 0));
+                if (!empty($active)) {
+                    $groupLabel  = !empty($active[0]['group_tamil_name']) ? $active[0]['group_tamil_name'] : $gName;
+                    $groupTotal  = array_sum(array_map(fn($v) => (int)($item['qty_map'][$v['id']] ?? 0), $active));
+                    $minSize     = min(array_map(fn($v) => (float)($v['size'] ?? 0), $active));
+                    $activeGroups[] = ['label' => $groupLabel, 'vars' => $active, 'total' => $groupTotal, 'min_size' => $minSize];
+                }
+            }
+            usort($activeGroups, fn($a, $b) => $a['min_size'] <=> $b['min_size']);
+
+            foreach ($activeGroups as $g) {
+                foreach ($g['vars'] as $v) {
+                    $qty = (int)($item['qty_map'][$v['id']] ?? 0);
+                    if (!isset($allVarCols[$v['id']])) {
+                        $allVarCols[$v['id']] = ['name' => $v['name'], 'size' => (float)($v['size'] ?? 0), 'group_label' => $g['label'], 'group_min_size' => $g['min_size']];
+                        $colTotals[$v['id']] = 0;
+                    }
+                    $colTotals[$v['id']] += $qty;
+                    $grandTotal           += $qty;
+                }
+            }
+
+            $productTotal = array_sum(array_column($activeGroups, 'total'));
+            $productEstWeight = 0.0;
+            $wmapSlip = $this->_computeWeightMap($item['product_id'], $item['pattern_id'], (int)($item['main_part_id'] ?? 0), $id);
+            foreach ($item['qty_map'] as $vid => $qty) {
+                $productEstWeight += (float)($wmapSlip[$vid] ?? 0) * (int)$qty;
+            }
+
+            $html .= '<div class="slip">';
+            $html .= '<table class="slip-header"><tr>';
+            $html .= '<td class="slip-left"><div class="slip-code-big">' . htmlspecialchars($item['pattern_code'] ?? '') . '</div>';
+            $html .= '<div class="slip-date">' . date('d M Y', strtotime($order['created_at'])) . '</div></td>';
+            $html .= '<td class="slip-centre">';
+            if (!empty($item['stamp_name'])) $html .= '<div class="slip-stamp">சீல் : ' . htmlspecialchars($item['stamp_name']) . '</div>';
+            $html .= '</td>';
+            $html .= '<td class="slip-right"><div class="slip-order-no">Order #' . (int)$order['id'] . '</div>';
+            $html .= '<div class="slip-weight">' . number_format($productEstWeight, 2) . ' g</div>';
+            $html .= '<div class="slip-pcs">' . $productTotal . ' pcs</div></td>';
+            $html .= '</tr></table>';
+
+            $html .= '<div class="slip-pattern-name"><span class="slip-serial-no">#' . ($idx + 1) . '</span> ' . htmlspecialchars($displayName) . '</div>';
+
+            if (!empty($item['product_image'])) {
+                $imgPath = FCPATH . 'uploads/products/' . $item['product_image'];
+                if (file_exists($imgPath)) $html .= '<img src="' . $imgPath . '" class="slip-img" alt="">';
+            }
+
+            if (!empty($activeGroups)) {
+                $html .= '<table><thead><tr>';
+                foreach ($activeGroups as $gIdx => $g) {
+                    $cls = ($gIdx % 2 === 0) ? 'g-even' : 'g-odd';
+                    $html .= '<th colspan="' . count($g['vars']) . '" class="' . $cls . '">' . htmlspecialchars($g['label']) . ' (' . $g['total'] . ' pcs)</th>';
+                }
+                $html .= '</tr><tr>';
+                foreach ($activeGroups as $gIdx => $g) {
+                    $cls = ($gIdx % 2 === 0) ? 'g-even' : 'g-odd';
+                    foreach ($g['vars'] as $v) $html .= '<th class="' . $cls . '">' . htmlspecialchars($v['name']) . '</th>';
+                }
+                $html .= '</tr></thead><tbody><tr>';
+                foreach ($activeGroups as $g) {
+                    foreach ($g['vars'] as $v) $html .= '<td>' . (int)($item['qty_map'][$v['id']] ?? 0) . '</td>';
+                }
+                $html .= '</tr></tbody></table>';
+            }
+
+            $html .= '<div class="slip-page-no">Page ' . ($idx + 1) . ' of ' . $totalItems . '</div>';
+            $html .= '</div>';
+
+            if ($idx < $totalItems - 1) {
+                $html .= '<div class="cut"></div>';
+                $html .= '<div style="page-break-after:always;"></div>';
+            }
+        }
+
+        if (!empty($allVarCols)) {
+            uasort($allVarCols, function($a, $b) {
+                if ($a['group_min_size'] !== $b['group_min_size']) return $a['group_min_size'] <=> $b['group_min_size'];
+                return $a['size'] <=> $b['size'];
+            });
+            $varIds = array_keys($allVarCols);
+            $headerGroups = []; $prevLabel = null;
+            foreach ($allVarCols as $vid => $vc) {
+                if ($vc['group_label'] !== $prevLabel) { $headerGroups[] = ['label' => $vc['group_label'], 'count' => 0, 'total' => 0]; $prevLabel = $vc['group_label']; }
+                $headerGroups[count($headerGroups)-1]['count']++;
+                $headerGroups[count($headerGroups)-1]['total'] += $colTotals[$vid];
+            }
+            $html .= '<div style="page-break-before:always;"></div>';
+            $html .= '<h3 style="margin:0 0 6px 0;font-family:latha;">Order Summary &mdash; ' . $grandTotal . ' pcs</h3>';
+            $html .= '<table><thead><tr>';
+            foreach ($headerGroups as $gIdx => $g) {
+                $cls = ($gIdx % 2 === 0) ? 'g-even' : 'g-odd';
+                $html .= '<th colspan="' . $g['count'] . '" class="' . $cls . '">' . htmlspecialchars($g['label']) . ' (' . $g['total'] . ' pcs)</th>';
+            }
+            $html .= '<th>Total</th></tr><tr>';
+            $gIdx2 = 0; $prevLabel2 = null;
+            foreach ($allVarCols as $vid => $vc) {
+                if ($vc['group_label'] !== $prevLabel2) { $gIdx2++; $prevLabel2 = $vc['group_label']; }
+                $cls = (($gIdx2 - 1) % 2 === 0) ? 'g-even' : 'g-odd';
+                $html .= '<th class="' . $cls . '">' . htmlspecialchars($vc['name']) . '</th>';
+            }
+            $html .= '<th></th></tr></thead><tbody><tr>';
+            foreach ($varIds as $vid) { $v = $colTotals[$vid]; $html .= '<td>' . ($v > 0 ? $v : '&mdash;') . '</td>'; }
+            $html .= '<td><strong>' . $grandTotal . '</strong></td></tr></tbody></table>';
+        }
+
+        $html .= '</body></html>';
+        \App\Services\PdfService::makeA5Portrait($html, 'order-slip-' . $id . '.pdf');
+    }
+
+    public function orderSheetSlipWithPartsPdf($id)
+    {
+        $order = $this->_getOrder($id);
+        if (!$order) return redirect()->to('orders')->with('error', 'Not found');
+        if ($order['status'] === 'draft') return redirect()->to('orders/view/' . $id)->with('error', 'Confirm order first');
+
+        $rawItems = $this->db->query('
+            SELECT oi.*, p.name as product_name, p.sku, p.main_part_id, p.image as product_image,
+                   pt.variations as pt_variations, pt.multiplication_factor,
+                   b.clasp_size,
+                   pp.name as pattern_name, pp.tamil_name as pattern_tamil_name, pp.pattern_code,
+                   s.name as stamp_name
+            FROM order_items oi
+            JOIN product p ON p.id = oi.product_id
+            LEFT JOIN product_type pt ON pt.id = p.product_type_id
+            LEFT JOIN body b ON b.id = p.body_id
+            LEFT JOIN product_pattern pp ON pp.id = oi.pattern_id
+            LEFT JOIN stamp s ON s.id = oi.stamp_id
+            WHERE oi.order_id = ?
+            ORDER BY oi.sort_order, oi.id
+        ', [$id])->getResultArray();
+
+        $items = [];
+        foreach ($rawItems as $item) {
+            $varIds = [];
+            if (!empty($item['pt_variations'])) {
+                $varIds = array_values(array_filter(array_map('trim', explode(',', $item['pt_variations']))));
+            }
+            $variations = [];
+            if ($varIds) {
+                $ph = implode(',', array_fill(0, count($varIds), '?'));
+                $variations = $this->db->query("SELECT * FROM variation WHERE id IN ($ph) ORDER BY group_name, size+0", $varIds)->getResultArray();
+            }
+            $qtyRows = $this->db->query('SELECT variation_id, quantity FROM order_item_qty WHERE order_item_id = ? AND quantity > 0', [$item['id']])->getResultArray();
+            $qtyMap = [];
+            foreach ($qtyRows as $q) $qtyMap[$q['variation_id']] = $q['quantity'];
+            $item['variations'] = $variations;
+            $item['qty_map']    = $qtyMap;
+            $items[] = $item;
+        }
+
+        $css = '
+            body { font-family: latha; font-size: 11px; color: #222; margin: 0; padding: 0; }
+            .slip { overflow: hidden; box-sizing: border-box; padding: 3mm 4mm; }
+            .slip-header { width: 100%; border-collapse: collapse; margin-bottom: 2mm; border-bottom: 1px solid #ddd; padding-bottom: 1mm; }
+            .slip-left   { width: 33%; vertical-align: top; text-align: left; }
+            .slip-centre { width: 34%; vertical-align: middle; text-align: center; }
+            .slip-right  { width: 33%; vertical-align: top; text-align: right; }
+            .slip-code-big { font-size: 13px; font-weight: bold; }
+            .slip-pattern-name { font-size: 13px; font-weight: bold; text-align: center; margin: 2mm 0 1mm 0; color: #111; }
+            .slip-serial-no { font-size: 13px; font-weight: 900; color: #000; margin-right: 2px; }
+            .slip-date   { font-size: 9px; color: #666; margin-top: 1mm; }
+            .slip-stamp  { font-size: 14px; font-weight: bold; color: #222; }
+            .slip-order-no { font-size: 12px; font-weight: bold; }
+            .slip-weight { font-size: 10px; color: #555; margin-top: 1mm; }
+            .slip-pcs    { font-size: 10px; color: #555; }
+            .slip-img { width: 100%; max-height: 40mm; object-fit: contain; display: block; margin-bottom: 2mm; }
+            .slip-page-no { font-size: 9px; color: #999; text-align: right; margin-top: 1mm; margin-bottom: 1mm; }
+            table { width: 100%; border-collapse: collapse; font-size: 10px; }
+            th, td { border: 2px solid #444; padding: 1mm 1.5mm; text-align: center; }
+            th { font-weight: bold; }
+            .g-even { background: #fde8c8; }
+            .g-odd  { background: #d4edda; }
+            .parts-title { font-size: 13px; font-weight: bold; text-align: center; margin: 3mm 0 2mm 0; color: #111; }
+            .parts-table { width: 100%; border-collapse: collapse; font-size: 10px; }
+            .parts-table th { background: #333; color: #fff; padding: 1.5mm 2mm; text-align: left; border: 1px solid #333; }
+            .parts-table td { padding: 1mm 2mm; border: 1px solid #ccc; text-align: left; }
+            .parts-table tr:nth-child(even) td { background: #f7f7f7; }
+        ';
+
+        $html = '<html><head><meta charset="utf-8"><style>' . $css . '</style></head><body>';
+
+        $allVarCols = [];
+        $colTotals  = [];
+        $grandTotal = 0;
+        $totalItems = count($items);
+
+        foreach ($items as $idx => $item) {
+            $varsByGroup = [];
+            foreach ($item['variations'] as $v) $varsByGroup[$v['group_name']][] = $v;
+
+            $displayName = !empty($item['pattern_tamil_name'])
+                ? $item['pattern_tamil_name']
+                : (!empty($item['pattern_name']) ? $item['pattern_name'] : $item['product_name']);
+
+            $activeGroups = [];
+            foreach ($varsByGroup as $gName => $vars) {
+                $active = array_values(array_filter($vars, fn($v) => ($item['qty_map'][$v['id']] ?? 0) > 0));
+                if (!empty($active)) {
+                    $groupLabel  = !empty($active[0]['group_tamil_name']) ? $active[0]['group_tamil_name'] : $gName;
+                    $groupTotal  = array_sum(array_map(fn($v) => (int)($item['qty_map'][$v['id']] ?? 0), $active));
+                    $minSize     = min(array_map(fn($v) => (float)($v['size'] ?? 0), $active));
+                    $activeGroups[] = ['label' => $groupLabel, 'vars' => $active, 'total' => $groupTotal, 'min_size' => $minSize];
+                }
+            }
+            usort($activeGroups, fn($a, $b) => $a['min_size'] <=> $b['min_size']);
+
+            foreach ($activeGroups as $g) {
+                foreach ($g['vars'] as $v) {
+                    $qty = (int)($item['qty_map'][$v['id']] ?? 0);
+                    if (!isset($allVarCols[$v['id']])) {
+                        $allVarCols[$v['id']] = ['name' => $v['name'], 'size' => (float)($v['size'] ?? 0), 'group_label' => $g['label'], 'group_min_size' => $g['min_size']];
+                        $colTotals[$v['id']] = 0;
+                    }
+                    $colTotals[$v['id']] += $qty;
+                    $grandTotal           += $qty;
+                }
+            }
+
+            $productTotal = array_sum(array_column($activeGroups, 'total'));
+            $productEstWeight = 0.0;
+            $wmapSlip = $this->_computeWeightMap($item['product_id'], $item['pattern_id'], (int)($item['main_part_id'] ?? 0), $id);
+            foreach ($item['qty_map'] as $vid => $qty) {
+                $productEstWeight += (float)($wmapSlip[$vid] ?? 0) * (int)$qty;
+            }
+
+            $html .= '<div class="slip">';
+            $html .= '<table class="slip-header"><tr>';
+            $html .= '<td class="slip-left"><div class="slip-code-big">' . htmlspecialchars($item['pattern_code'] ?? '') . '</div>';
+            $html .= '<div class="slip-date">' . date('d M Y', strtotime($order['created_at'])) . '</div></td>';
+            $html .= '<td class="slip-centre">';
+            if (!empty($item['stamp_name'])) $html .= '<div class="slip-stamp">சீல் : ' . htmlspecialchars($item['stamp_name']) . '</div>';
+            $html .= '</td>';
+            $html .= '<td class="slip-right"><div class="slip-order-no">Order #' . (int)$order['id'] . '</div>';
+            $html .= '<div class="slip-weight">' . number_format($productEstWeight, 2) . ' g</div>';
+            $html .= '<div class="slip-pcs">' . $productTotal . ' pcs</div></td>';
+            $html .= '</tr></table>';
+
+            $html .= '<div class="slip-pattern-name"><span class="slip-serial-no">#' . ($idx + 1) . '</span> ' . htmlspecialchars($displayName) . '</div>';
+
+            if (!empty($item['product_image'])) {
+                $imgPath = FCPATH . 'uploads/products/' . $item['product_image'];
+                if (file_exists($imgPath)) $html .= '<img src="' . $imgPath . '" class="slip-img" alt="">';
+            }
+
+            if (!empty($activeGroups)) {
+                $html .= '<table><thead><tr>';
+                foreach ($activeGroups as $gIdx => $g) {
+                    $cls = ($gIdx % 2 === 0) ? 'g-even' : 'g-odd';
+                    $html .= '<th colspan="' . count($g['vars']) . '" class="' . $cls . '">' . htmlspecialchars($g['label']) . ' (' . $g['total'] . ' pcs)</th>';
+                }
+                $html .= '</tr><tr>';
+                foreach ($activeGroups as $gIdx => $g) {
+                    $cls = ($gIdx % 2 === 0) ? 'g-even' : 'g-odd';
+                    foreach ($g['vars'] as $v) $html .= '<th class="' . $cls . '">' . htmlspecialchars($v['name']) . '</th>';
+                }
+                $html .= '</tr></thead><tbody><tr>';
+                foreach ($activeGroups as $g) {
+                    foreach ($g['vars'] as $v) $html .= '<td>' . (int)($item['qty_map'][$v['id']] ?? 0) . '</td>';
+                }
+                $html .= '</tr></tbody></table>';
+            }
+
+            $html .= '<div class="slip-page-no">Page ' . ($idx + 1) . ' of ' . $totalItems . '</div>';
+
+            $partAggregated = $this->_calculatePartRequirements($id, [], $item['id']);
+            $partIds2 = array_keys($partAggregated);
+            $partsInfo = [];
+            if ($partIds2) {
+                $ph2 = implode(',', array_fill(0, count($partIds2), '?'));
+                $pRows = $this->db->query("SELECT id, name, tamil_name, weight FROM part WHERE id IN ($ph2)", $partIds2)->getResultArray();
+                foreach ($pRows as $p) $partsInfo[$p['id']] = $p;
+            }
+
+            $partRows = [];
+            foreach ($partAggregated as $partId => $data) {
+                $pInfo  = $partsInfo[$partId] ?? [];
+                $tName  = trim($pInfo['tamil_name'] ?? '');
+                $pName  = $tName !== '' ? $tName : ($pInfo['name'] ?? 'Part #' . $partId);
+                $pcs    = (float)($data['part_pcs'] ?? 0);
+                $wt     = $pcs * (float)($pInfo['weight'] ?? 0);
+                $partRows[] = ['name' => $pName, 'pcs' => $pcs, 'wt' => $wt];
+            }
+
+            $html .= '<div class="parts-title">தேவையான பொருள்கள்</div>';
+
+            $renderPartsTable = function(array $rows) use (&$html) {
+                $html .= '<table class="parts-table" style="width:100%;"><thead><tr>';
+                $html .= '<th>பொருள்</th><th>எண்ணிக்கை</th><th>எடை</th>';
+                $html .= '</tr></thead><tbody>';
+                if (empty($rows)) {
+                    $html .= '<tr><td colspan="3" style="text-align:center;color:#999;">&mdash;</td></tr>';
+                } else {
+                    foreach ($rows as $row) {
+                        $html .= '<tr><td>' . htmlspecialchars($row['name']) . '</td>';
+                        $html .= '<td>' . number_format($row['pcs'], 2) . ' pcs</td>';
+                        $html .= '<td>' . number_format($row['wt'], 4) . ' g</td></tr>';
+                    }
+                }
+                $html .= '</tbody></table>';
+            };
+
+            if (count($partRows) > 5) {
+                $half  = (int)ceil(count($partRows) / 2);
+                $left  = array_slice($partRows, 0, $half);
+                $right = array_slice($partRows, $half);
+                $html .= '<table style="width:100%;border-collapse:collapse;"><tr>';
+                $html .= '<td style="width:50%;vertical-align:top;padding-right:2mm;">';
+                $renderPartsTable($left);
+                $html .= '</td><td style="width:50%;vertical-align:top;padding-left:2mm;">';
+                $renderPartsTable($right);
+                $html .= '</td></tr></table>';
+            } else {
+                $renderPartsTable($partRows);
+            }
+
+            $html .= '</div>';
+
+            if ($idx < $totalItems - 1) $html .= '<div style="page-break-after:always;"></div>';
+        }
+
+        if (!empty($allVarCols)) {
+            uasort($allVarCols, function($a, $b) {
+                if ($a['group_min_size'] !== $b['group_min_size']) return $a['group_min_size'] <=> $b['group_min_size'];
+                return $a['size'] <=> $b['size'];
+            });
+            $varIds = array_keys($allVarCols);
+            $headerGroups = []; $prevLabel = null;
+            foreach ($allVarCols as $vid => $vc) {
+                if ($vc['group_label'] !== $prevLabel) { $headerGroups[] = ['label' => $vc['group_label'], 'count' => 0, 'total' => 0]; $prevLabel = $vc['group_label']; }
+                $headerGroups[count($headerGroups)-1]['count']++;
+                $headerGroups[count($headerGroups)-1]['total'] += $colTotals[$vid];
+            }
+            $html .= '<div style="page-break-before:always;"></div>';
+            $html .= '<h3 style="margin:0 0 6px 0;font-family:latha;">Order Summary &mdash; ' . $grandTotal . ' pcs</h3>';
+            $html .= '<table><thead><tr>';
+            foreach ($headerGroups as $gIdx => $g) {
+                $cls = ($gIdx % 2 === 0) ? 'g-even' : 'g-odd';
+                $html .= '<th colspan="' . $g['count'] . '" class="' . $cls . '">' . htmlspecialchars($g['label']) . ' (' . $g['total'] . ' pcs)</th>';
+            }
+            $html .= '<th>Total</th></tr><tr>';
+            $gIdx2 = 0; $prevLabel2 = null;
+            foreach ($allVarCols as $vid => $vc) {
+                if ($vc['group_label'] !== $prevLabel2) { $gIdx2++; $prevLabel2 = $vc['group_label']; }
+                $cls = (($gIdx2 - 1) % 2 === 0) ? 'g-even' : 'g-odd';
+                $html .= '<th class="' . $cls . '">' . htmlspecialchars($vc['name']) . '</th>';
+            }
+            $html .= '<th></th></tr></thead><tbody><tr>';
+            foreach ($varIds as $vid) { $v = $colTotals[$vid]; $html .= '<td>' . ($v > 0 ? $v : '&mdash;') . '</td>'; }
+            $html .= '<td><strong>' . $grandTotal . '</strong></td></tr></tbody></table>';
+        }
+
+        $html .= '</body></html>';
+        \App\Services\PdfService::makeA5Portrait($html, 'order-slip-parts-' . $id . '.pdf');
     }
 
     // ========== AJAX ==========

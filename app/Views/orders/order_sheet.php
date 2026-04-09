@@ -18,7 +18,16 @@
                 </a>
             </li>
             <li><hr class="dropdown-divider"></li>
-            <li><span class="dropdown-item text-muted" style="font-size:12px;"><i class="bi bi-clock me-1"></i> More formats coming soon</span></li>
+            <li>
+                <a class="dropdown-item" href="<?= base_url('orders/orderSheetSlipPdf/' . $order['id']) ?>" target="_blank">
+                    <i class="bi bi-scissors text-warning me-1"></i> Order Slip PDF (A5 Half-page)
+                </a>
+            </li>
+            <li>
+                <a class="dropdown-item" href="<?= base_url('orders/orderSheetSlipWithPartsPdf/' . $order['id']) ?>" target="_blank">
+                    <i class="bi bi-scissors text-danger me-1"></i> Slip + Parts PDF (A5)
+                </a>
+            </li>
         </ul>
     </div>
 </div>

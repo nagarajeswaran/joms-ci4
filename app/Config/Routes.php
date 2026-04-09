@@ -141,6 +141,8 @@ $routes->post('orders/do-split/(:num)','Orders::doSplit/$1');
 $routes->get('orders/merge-preview',   'Orders::mergePreview');
 $routes->post('orders/do-merge',        'Orders::doMerge');
 $routes->get('orders/orderSheetPdf/(:num)',        'Orders::orderSheetPdf/$1');
+$routes->get('orders/orderSheetSlipPdf/(:num)',    'Orders::orderSheetSlipPdf/$1');
+$routes->get('orders/orderSheetSlipWithPartsPdf/(:num)', 'Orders::orderSheetSlipWithPartsPdf/$1');
 $routes->get('orders/partRequirementsPdf/(:num)',  'Orders::partRequirementsPdf/$1');
 $routes->post('orders/saveTouchAnalysis/(:num)',   'Orders::saveTouchAnalysis/$1');
 $routes->post('orders/searchProducts', 'Orders::searchProducts');

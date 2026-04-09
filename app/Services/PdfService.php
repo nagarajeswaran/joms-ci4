@@ -53,4 +53,23 @@ class PdfService
         $mpdf->Output($filename, \Mpdf\Output\Destination::INLINE);
         exit;
     }
+
+    public static function makeA5Portrait(string $html, string $filename = 'document.pdf'): void
+    {
+        $fontDir = APPPATH . 'ThirdParty/fonts';
+        $mpdf = new \Mpdf\Mpdf([
+            'mode'          => 'utf-8',
+            'format'        => 'A5',
+            'margin_top'    => 6,
+            'margin_bottom' => 6,
+            'margin_left'   => 8,
+            'margin_right'  => 8,
+            'fontDir'       => [$fontDir],
+            'fontdata'      => ['latha' => ['R' => 'latha.ttf', 'useOTL' => 0xFF]],
+            'default_font'  => 'latha',
+        ]);
+        $mpdf->WriteHTML($html);
+        $mpdf->Output($filename, \Mpdf\Output\Destination::INLINE);
+        exit;
+    }
 }
