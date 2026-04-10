@@ -154,31 +154,49 @@ class PartOrder extends BaseController
         $gattiStock  = $db->query('SELECT gs.id, gs.batch_number, gs.weight_g, gs.touch_pct, gs.qty_issued_g, mj.job_number, s.name as stamp_name FROM gatti_stock gs LEFT JOIN melt_job mj ON mj.id = gs.melt_job_id LEFT JOIN stamp s ON s.id = gs.stamp_id WHERE (gs.weight_g - gs.qty_issued_g) > 0 ORDER BY gs.created_at DESC')->getResultArray();
         $partBatches = $db->query('SELECT pb.id, pb.batch_number, pb.part_id, pb.touch_pct, pb.weight_in_stock_g, pb.qty_in_stock, p.name as part_name FROM part_batch pb LEFT JOIN part p ON p.id = pb.part_id WHERE pb.weight_in_stock_g > 0 ORDER BY p.name, pb.batch_number')->getResultArray();
         $stamps      = $db->query('SELECT id, name FROM stamp ORDER BY name')->getResultArray();
-        $parts       = $db->query('SELECT id, name FROM part ORDER BY name')->getResultArray();
+        $parts       = $db->query('SELECT id, name, gatti FROM part ORDER BY name')->getResultArray();
         $byprods     = $db->query('SELECT id, name FROM byproduct_type ORDER BY name')->getResultArray();
 
+        // Manufacturing Allocation Plan
+        $allocations = $db->query('
+            SELECT a.*, p.name AS part_name
+            FROM part_order_allocation a
+            LEFT JOIN part p ON p.id = a.part_id
+            WHERE a.part_order_id = ?
+            ORDER BY a.id
+        ', [$id])->getResultArray();
+        $totalAllocatedWeight = array_sum(array_column($allocations, 'allocated_weight_g'));
+        $remainingBalance     = $totalIssuedWeight - $totalAllocatedWeight;
+        $defaultTouchPct      = ($totalIssuedWeight > 0)
+            ? round(($totalIssuedFine / $totalIssuedWeight) * 100, 4) + 5
+            : 5;
+
         return view('part_orders/view', [
-            'title'             => $po['order_number'],
-            'po'                => $po,
-            'issues'            => $issues,
-            'receives'          => $receives,
-            'gattiStock'        => $gattiStock,
-            'partBatches'       => $partBatches,
-            'stamps'            => $stamps,
-            'parts'             => $parts,
-            'byprods'           => $byprods,
-            'totalIssuedFine'   => $totalIssuedFine,
-            'totalIssuedWeight' => $totalIssuedWeight,
-            'totalRecvFine'     => $totalRecvFine,
-            'totalRecvWeight'   => $totalRecvWeight,
-            'totalPartsWeight'  => $totalPartsWeight,
-            'fineDiff'          => $fineDiff,
-            'mcFine'            => $mcFine,
-            'mcCash'            => $mcCash,
-            'netFine'           => $netFine,
-            'chargeBreakdown'   => $breakdown,
-            'hasChargeRules'    => $charges['hasRules'],
-            'hasOverrides'      => $hasOverrides,
+            'title'               => $po['order_number'],
+            'po'                  => $po,
+            'issues'              => $issues,
+            'receives'            => $receives,
+            'gattiStock'          => $gattiStock,
+            'partBatches'         => $partBatches,
+            'stamps'              => $stamps,
+            'parts'               => $parts,
+            'byprods'             => $byprods,
+            'totalIssuedFine'     => $totalIssuedFine,
+            'totalIssuedWeight'   => $totalIssuedWeight,
+            'totalRecvFine'       => $totalRecvFine,
+            'totalRecvWeight'     => $totalRecvWeight,
+            'totalPartsWeight'    => $totalPartsWeight,
+            'fineDiff'            => $fineDiff,
+            'mcFine'              => $mcFine,
+            'mcCash'              => $mcCash,
+            'netFine'             => $netFine,
+            'chargeBreakdown'     => $breakdown,
+            'hasChargeRules'      => $charges['hasRules'],
+            'hasOverrides'        => $hasOverrides,
+            'allocations'         => $allocations,
+            'totalAllocatedWeight'=> $totalAllocatedWeight,
+            'remainingBalance'    => $remainingBalance,
+            'defaultTouchPct'     => $defaultTouchPct,
         ]);
     }
 
@@ -228,6 +246,160 @@ class PartOrder extends BaseController
         }
         $db->table('part_order')->where('id', $id)->update(['notes' => $this->request->getPost('notes')]);
         return redirect()->to('part-orders/view/'.$id)->with('success', 'Notes saved');
+    }
+
+    public function saveAllocation($poId)
+    {
+        $db      = \Config\Database::connect();
+        $partId  = $this->request->getPost('part_id') ?: null;
+        $manual  = trim($this->request->getPost('manual_label') ?? '');
+        $weight  = (float)$this->request->getPost('allocated_weight_g');
+        $touch   = (float)$this->request->getPost('touch_pct');
+        $gattiKg = (float)($this->request->getPost('gatti_per_kg') ?: 0) ?: null;
+        $allocId = (int)$this->request->getPost('allocation_id');
+
+        if (!$partId && !$manual) {
+            return redirect()->to('part-orders/view/'.$poId)->with('error', 'Select a part or enter a manual label');
+        }
+        if ($weight <= 0) {
+            return redirect()->to('part-orders/view/'.$poId)->with('error', 'Weight must be greater than 0');
+        }
+
+        if ($partId) {
+            $part    = $db->query('SELECT gatti FROM part WHERE id = ?', [$partId])->getRowArray();
+            $gattiKg = $part ? (float)$part['gatti'] : $gattiKg;
+            $manual  = null;
+        }
+
+        $data = [
+            'part_order_id'      => $poId,
+            'part_id'            => $partId,
+            'manual_label'       => $manual ?: null,
+            'allocated_weight_g' => $weight,
+            'touch_pct'          => $touch,
+            'gatti_per_kg'       => $gattiKg ?: null,
+            'tamil_name'         => trim($this->request->getPost('tamil_name') ?? '') ?: null,
+        ];
+
+        if ($allocId > 0) {
+            $db->table('part_order_allocation')->where('id', $allocId)->where('part_order_id', $poId)->update($data);
+            $msg = 'Allocation updated';
+        } else {
+            $db->table('part_order_allocation')->insert($data);
+            $msg = 'Allocation added';
+        }
+
+        return redirect()->to('part-orders/view/'.$poId)->with('success', $msg);
+    }
+
+    public function deleteAllocation($poId, $allocId)
+    {
+        $db = \Config\Database::connect();
+        $db->table('part_order_allocation')->where('id', $allocId)->where('part_order_id', $poId)->delete();
+        return redirect()->to('part-orders/view/'.$poId)->with('success', 'Allocation removed');
+    }
+
+    public function updateDisplayTouch($id)
+    {
+        $db = \Config\Database::connect();
+        $po = $db->query('SELECT id FROM part_order WHERE id = ?', [$id])->getRowArray();
+        if (!$po) return redirect()->to('part-orders/view/'.$id)->with('error', 'Not found');
+        $db->table('part_order')->where('id', $id)->update(['display_touch' => (float)$this->request->getPost('display_touch')]);
+        return redirect()->to('part-orders/view/'.$id)->with('success', 'Display touch saved');
+    }
+
+    public function manfPlanPdf($id)
+    {
+        $db = \Config\Database::connect();
+        $po = $db->query('
+            SELECT po.*, k.name AS karigar_name
+            FROM part_order po
+            JOIN karigar k ON k.id = po.karigar_id
+            WHERE po.id = ?
+        ', [$id])->getRowArray();
+        if (!$po) return redirect()->to('part-orders');
+
+        // Linked order
+        $linkedOrder = null;
+        if (!empty($po['client_order_id'])) {
+            $linkedOrder = $db->query('SELECT id, order_number FROM orders WHERE id = ?', [$po['client_order_id']])->getRowArray();
+        }
+
+        // Total issued weight
+        $issueTot = $db->query('SELECT SUM(weight_g) AS tw FROM part_order_issue WHERE part_order_id = ?', [$id])->getRowArray();
+        $totalIssuedWeight = (float)($issueTot['tw'] ?? 0);
+
+        // Allocations
+        $allocations = $db->query('
+            SELECT a.*, p.name AS part_name, p.tamil_name AS part_tamil_name
+            FROM part_order_allocation a
+            LEFT JOIN part p ON p.id = a.part_id
+            WHERE a.part_order_id = ?
+            ORDER BY a.id
+        ', [$id])->getResultArray();
+
+        $totalAllocated = array_sum(array_column($allocations, 'allocated_weight_g'));
+
+        $css = '
+            body { font-family: latha; font-size: 11px; color: #222; margin: 0; padding: 0; }
+            .slip { height: 99mm; overflow: hidden; box-sizing: border-box; padding: 2mm 4mm; }
+            .cut  { border-top: 1px dashed #999; width: 100%; margin: 0; }
+            .hdr-table { width: 100%; border-collapse: collapse; margin-bottom: 2mm; }
+            .hdr-table td { padding: 0 1mm; vertical-align: top; font-size: 11px; }
+            .po-no  { font-size: 13px; font-weight: bold; }
+            .karigar-name { font-size: 12px; font-weight: bold; }
+            .hdr-right { text-align: right; }
+            .date-time  { font-size: 9px; color: #666; }
+            .linked     { font-size: 10px; color: #555; }
+            .touch-line { font-size: 11px; font-weight: bold; text-align: center; margin-top: 2mm; }
+            .band { background: #fff3cd; text-align: center; font-size: 14px;
+                    font-weight: bold; padding: 2mm 3mm; margin: 2mm 0; border: 1px solid #e0c87a; }
+            table.alloc { width: 100%; border-collapse: collapse; margin-top: 2mm; font-size: 11px; }
+            table.alloc th, table.alloc td { border: 1px solid #555; padding: 1mm 2mm; }
+            table.alloc th { background: #eee; font-weight: bold; text-align: center; }
+            table.alloc td:last-child { text-align: right; }
+            table.alloc th:last-child { text-align: right; }
+            .tfoot-row td { font-weight: bold; background: #f0f0f0; }
+        ';
+
+        $slipHtml = function() use ($po, $linkedOrder, $totalIssuedWeight, $allocations, $totalAllocated) {
+            $dateTime   = date('d/m/Y H:i', strtotime($po['created_at']));
+            $linkedText = $linkedOrder ? 'இணைப்பு: ' . htmlspecialchars($linkedOrder['order_number']) : '';
+            $touchVal   = (float)($po['display_touch'] ?? 0);
+            $touch      = ($touchVal == floor($touchVal))
+                          ? number_format($touchVal, 0)
+                          : number_format($touchVal, 2);
+
+            $h  = '<div class="slip">';
+            $h .= '<table class="hdr-table"><tr>';
+            $h .= '<td><div class="po-no">' . htmlspecialchars($po['order_number']) . '</div>';
+            $h .= '<div class="karigar-name">' . htmlspecialchars($po['karigar_name']) . '</div>';
+            if ($linkedText) $h .= '<div class="linked">' . $linkedText . '</div>';
+            $h .= '</td>';
+            $h .= '<td class="hdr-right"><div class="date-time">' . $dateTime . '</div></td>';
+            $h .= '</tr></table>';
+            $h .= '<div class="touch-line">டச்: ' . $touch . '%</div>';
+
+            $h .= '<div class="band">பற்று எடை: ' . number_format($totalIssuedWeight, 0) . ' g</div>';
+
+            $h .= '<table class="alloc"><thead><tr><th>தேவையான பொருள்</th><th>கட்டி எடை</th></tr></thead><tbody>';
+            foreach ($allocations as $idx => $al) {
+                $label = $al['tamil_name'] ?: ($al['part_tamil_name'] ?: ($al['manual_label'] ?: ($al['part_name'] ?: '—')));
+                $h .= '<tr><td>' . ($idx + 1) . '. ' . htmlspecialchars($label) . '</td>';
+                $h .= '<td>' . number_format((float)$al['allocated_weight_g'], 0, '.', '') . ' g</td></tr>';
+            }
+            $h .= '</tbody><tfoot><tr class="tfoot-row"><td>மொத்தம்</td><td>' . number_format($totalAllocated, 0, '.', '') . ' g</td></tr></tfoot></table>';
+            $h .= '</div>';
+            return $h;
+        };
+
+        $slip = $slipHtml();
+        $html = '<html><head><meta charset="utf-8"><style>' . $css . '</style></head><body>'
+              . $slip
+              . '<div class="cut"></div>'
+              . '</body></html>';
+
+        \App\Services\PdfService::makeA5Portrait($html, 'manf-plan-' . $po['order_number'] . '.pdf');
     }
 
     public function addIssue($id)

@@ -292,6 +292,10 @@ $routes->post('part-orders/post/(:num)', 'PartOrder::post/$1');
 $routes->post('part-orders/(:num)/save-charge-overrides', 'PartOrder::saveChargeOverrides/$1');
 $routes->get('part-orders/(:num)/reset-charge-overrides', 'PartOrder::resetChargeOverrides/$1');
 $routes->post('part-orders/(:num)/update-notes', 'PartOrder::updateNotes/$1');
+$routes->post('part-orders/(:num)/save-allocation',         'PartOrder::saveAllocation/$1');
+$routes->get('part-orders/(:num)/delete-allocation/(:num)', 'PartOrder::deleteAllocation/$1/$2');
+$routes->post('part-orders/(:num)/update-display-touch',    'PartOrder::updateDisplayTouch/$1');
+$routes->get('part-orders/(:num)/manf-plan-pdf',            'PartOrder::manfPlanPdf/$1');
 
 // Karigar Ledger
 $routes->get('karigar-ledger', 'KarigarLedger::index');

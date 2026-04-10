@@ -6,6 +6,7 @@
         <small class="text-muted">Karigar: <strong><?= esc($po['karigar_name']) ?></strong><?= ($po['dept_name'] ?? '') ? ' ('.esc($po['dept_name']).')' : '' ?> | <?= $hasChargeRules ? '<span class="badge bg-info text-dark">Rules-based charges</span>' : 'Flat-rate charges' ?></small>
     </div>
     <span class="badge <?= $po['status']==='posted'?'bg-success':'bg-warning text-dark' ?> fs-6"><?= ucfirst($po['status']) ?></span>
+    <button class="btn btn-sm btn-outline-primary" type="button" data-bs-toggle="collapse" data-bs-target="#allocPanel" id="allocToggleBtn">Manufacturing Plan ▼</button>
 </div>
 
 <!-- ISSUED -->
@@ -137,6 +138,113 @@
 </table>
 </div>
 </div>
+
+<!-- MANUFACTURING ALLOCATION PLAN -->
+<div class="collapse" id="allocPanel">
+<div class="card mb-3">
+<div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <strong>Manufacturing Allocation Plan</strong>
+    <div class="d-flex align-items-center gap-3 flex-wrap">
+        <div class="d-flex gap-3 small">
+            <span>Total Issued: <strong><?= number_format($totalIssuedWeight,4) ?> g</strong></span>
+            <span>Allocated: <strong><?= number_format($totalAllocatedWeight,4) ?> g</strong></span>
+            <span class="<?= $remainingBalance >= 0 ? 'text-success' : 'text-danger' ?>">
+                Remaining: <strong><?= number_format($remainingBalance,4) ?> g</strong>
+            </span>
+        </div>
+        <form method="post" action="<?= base_url('part-orders/'.$po['id'].'/update-display-touch') ?>" class="d-inline-flex align-items-center gap-1">
+            <?= csrf_field() ?>
+            <label class="small mb-0 text-nowrap">டச் %</label>
+            <input type="number" step="0.01" name="display_touch" value="<?= number_format((float)($po['display_touch']??0),2,'.','') ?>"
+                   class="form-control form-control-sm" style="width:75px">
+            <button type="submit" class="btn btn-sm btn-outline-secondary py-0">✓</button>
+        </form>
+        <a href="<?= base_url('part-orders/'.$po['id'].'/manf-plan-pdf') ?>" target="_blank" class="btn btn-sm btn-outline-dark">⬇ Print Plan</a>
+    </div>
+</div>
+<div class="card-body p-0">
+<table class="table table-sm table-bordered mb-0">
+<thead class="table-dark">
+<tr><th>#</th><th>Part</th><th>Alloc Weight (g)</th><th>Gatti/Kg</th><th class="text-end">Expected Output (g)</th><th></th></tr>
+</thead>
+<tbody>
+<?php if ($allocations): ?>
+<?php foreach ($allocations as $idx => $al): ?>
+<?php
+    $label = $al['part_name'] ?? $al['manual_label'] ?? '—';
+    $isManual = !$al['part_id'];
+    $expOut = ($al['gatti_per_kg'] > 0) ? number_format(($al['allocated_weight_g'] / $al['gatti_per_kg']) * 1000, 4) : '—';
+?>
+<tr>
+    <td><?= $idx+1 ?></td>
+    <td><?= esc($label) ?><?= $isManual ? ' <span class="badge bg-secondary ms-1">Manual</span>' : '' ?>
+        <?php if (!empty($al['tamil_name'])): ?><br><small class="text-muted"><?= esc($al['tamil_name']) ?></small><?php endif; ?></td>
+    <td><?= number_format($al['allocated_weight_g'],4) ?></td>
+    <td><?= $al['gatti_per_kg'] ? number_format($al['gatti_per_kg'],2) : '—' ?></td>
+    <td class="text-end"><?= $expOut ?></td>
+    <td class="text-nowrap">
+        <button class="btn btn-sm btn-outline-warning" onclick="editAlloc(<?= $al['id'] ?>,<?= (int)$al['part_id'] ?>,'<?= esc(addslashes($al['manual_label']??'')) ?>',<?= $al['allocated_weight_g'] ?>,<?= $al['gatti_per_kg']??0 ?>,'<?= esc(addslashes($al['tamil_name']??'')) ?>')">Edit</button>
+        <a href="<?= base_url('part-orders/'.$po['id'].'/delete-allocation/'.$al['id']) ?>" class="btn btn-sm btn-outline-danger" onclick="return confirm('Remove this allocation?')">Del</a>
+    </td>
+</tr>
+<?php endforeach; ?>
+<?php else: ?>
+<tr><td colspan="6" class="text-center text-muted">No allocations yet</td></tr>
+<?php endif; ?>
+</tbody>
+<tfoot class="table-secondary fw-bold">
+<tr>
+    <td colspan="2" class="text-end">Total</td>
+    <td><?= number_format($totalAllocatedWeight,4) ?></td>
+    <td colspan="3"></td>
+</tr>
+</tfoot>
+</table>
+</div>
+<!-- Add / Edit form -->
+<div class="card-footer bg-light" id="allocForm">
+<form method="post" action="<?= base_url('part-orders/'.$po['id'].'/save-allocation') ?>">
+<?= csrf_field() ?>
+<input type="hidden" name="allocation_id" id="allocId" value="0">
+<div class="row g-2 align-items-end">
+    <div class="col-md-3">
+        <label class="form-label form-label-sm mb-1">Part</label>
+        <select name="part_id" id="allocPartSel" class="form-select form-select-sm" onchange="onPartChange(this)">
+            <option value="" data-gatti="">-- Manual Entry --</option>
+            <?php foreach ($parts as $p): ?>
+            <option value="<?= $p['id'] ?>" data-gatti="<?= $p['gatti'] ?? '' ?>"><?= esc($p['name']) ?><?= ($p['gatti'] ? ' ('.$p['gatti'].'g/kg)' : '') ?></option>
+            <?php endforeach; ?>
+        </select>
+    </div>
+    <div class="col-md-2" id="manualDiv">
+        <label class="form-label form-label-sm mb-1">Manual Label</label>
+        <input type="text" name="manual_label" id="allocManual" class="form-control form-control-sm" placeholder="Part name">
+    </div>
+    <div class="col-auto">
+        <label class="form-label form-label-sm mb-1">Weight (g)</label>
+        <input type="number" step="0.0001" name="allocated_weight_g" id="allocWeight" class="form-control form-control-sm" placeholder="0.0000" style="width:120px" oninput="calcExpected()">
+    </div>
+    <div class="col-md-2">
+        <label class="form-label form-label-sm mb-1">Tamil Name (தமிழ்)</label>
+        <input type="text" name="tamil_name" id="allocTamil" class="form-control form-control-sm" placeholder="தமிழ் பெயர்">
+    </div>
+    <div class="col-auto">
+        <label class="form-label form-label-sm mb-1">Gatti/Kg</label>
+        <input type="number" step="0.0001" name="gatti_per_kg" id="allocGattiKg" class="form-control form-control-sm" placeholder="e.g. 2200" style="width:110px" oninput="calcExpected()" readonly>
+    </div>
+    <div class="col-auto">
+        <label class="form-label form-label-sm mb-1">Expected Output</label>
+        <div class="form-control form-control-sm bg-white" id="expectedOutput" style="width:110px;min-height:31px">—</div>
+    </div>
+    <div class="col-auto">
+        <button type="submit" class="btn btn-sm btn-primary">Save</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary ms-1" onclick="cancelAllocEdit()">Cancel</button>
+    </div>
+</div>
+</form>
+</div><!-- /card-footer -->
+</div><!-- /card -->
+</div><!-- /allocPanel collapse -->
 
 <!-- RECEIVED -->
 <div class="card mb-3">
@@ -455,5 +563,73 @@ function calcPcs() {
     var p = parseFloat(document.getElementById('pcWt').value)||0;
     document.getElementById('pcsCalc').textContent = p > 0 ? 'Pcs: '+Math.round(w/p) : 'Pcs: -';
 }
+// ---------- Allocation Plan ----------
+// localStorage collapse persistence
+(function(){
+    var panel = document.getElementById('allocPanel');
+    var poId  = <?= (int)$po['id'] ?>;
+    var key   = 'allocOpen_' + poId;
+    if (localStorage.getItem(key) === '1') panel.classList.add('show');
+    panel.addEventListener('show.bs.collapse', function(){ localStorage.setItem(key, '1'); });
+    panel.addEventListener('hide.bs.collapse', function(){ localStorage.removeItem(key); });
+})();
+
+function onPartChange(sel) {
+    var gatti = parseFloat(sel.options[sel.selectedIndex].getAttribute('data-gatti')) || 0;
+    var manDiv = document.getElementById('manualDiv');
+    var gEl    = document.getElementById('allocGattiKg');
+    var isManual = sel.value === '';
+    manDiv.style.display = isManual ? '' : 'none';
+    if (gatti) {
+        gEl.value    = gatti;
+        gEl.readOnly = true;
+    } else {
+        gEl.value    = '';
+        gEl.readOnly = isManual ? false : true;
+    }
+    calcExpected();
+}
+function calcExpected() {
+    var w = parseFloat(document.getElementById('allocWeight').value) || 0;
+    var g = parseFloat(document.getElementById('allocGattiKg').value) || 0;
+    var el = document.getElementById('expectedOutput');
+    el.textContent = (w > 0 && g > 0) ? (w / g * 1000).toFixed(4) + ' g' : '—';
+}
+function editAlloc(id, partId, manualLabel, weight, gattiKg, tamilName) {
+    document.getElementById('allocId').value      = id;
+    document.getElementById('allocWeight').value  = weight;
+    document.getElementById('allocGattiKg').value = gattiKg || '';
+    document.getElementById('allocTamil').value   = tamilName || '';
+    var sel = document.getElementById('allocPartSel');
+    if (partId) {
+        for (var i = 0; i < sel.options.length; i++) {
+            if (parseInt(sel.options[i].value) === partId) { sel.selectedIndex = i; break; }
+        }
+        document.getElementById('manualDiv').style.display = 'none';
+        document.getElementById('allocGattiKg').readOnly   = true;
+    } else {
+        sel.selectedIndex = 0;
+        document.getElementById('manualDiv').style.display = '';
+        document.getElementById('allocManual').value       = manualLabel;
+        document.getElementById('allocGattiKg').readOnly   = !manualLabel;
+    }
+    calcExpected();
+    document.getElementById('allocForm').scrollIntoView({behavior:'smooth', block:'center'});
+}
+function cancelAllocEdit() {
+    document.getElementById('allocId').value      = 0;
+    document.getElementById('allocPartSel').selectedIndex = 0;
+    document.getElementById('allocManual').value  = '';
+    document.getElementById('allocWeight').value  = '';
+    document.getElementById('allocTamil').value   = '';
+    document.getElementById('allocGattiKg').value = '';
+    document.getElementById('expectedOutput').textContent = '—';
+    document.getElementById('manualDiv').style.display = '';
+}
+// Init: hide manual div if a part is pre-selected
+document.addEventListener('DOMContentLoaded', function(){
+    var sel = document.getElementById('allocPartSel');
+    if (sel) onPartChange(sel);
+});
 </script>
 <?= $this->endSection() ?>
