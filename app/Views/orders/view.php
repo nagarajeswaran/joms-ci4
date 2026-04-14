@@ -146,7 +146,7 @@ foreach ($items as $_itm) {
                     <select class="form-select form-select-sm" name="pattern_id" onchange="onExistingPatternChange(this)">
                         <option value="">-- No Pattern (Base BOM) --</option>
                         <?php foreach ($item['patterns'] as $pt): ?>
-                        <option value="<?= $pt['id'] ?>" <?= $item['pattern_id'] == $pt['id'] ? 'selected' : '' ?>><?= esc($pt['name']) ?><?= $pt['is_default'] ? ' (default)' : '' ?></option>
+                        <option value="<?= $pt['id'] ?>" <?= $item['pattern_id'] == $pt['id'] ? 'selected' : '' ?>><?= esc(!empty($pt['tamil_name']) ? $pt['tamil_name'] : $pt['name']) ?><?= $pt['is_default'] ? ' (default)' : '' ?></option>
                         <?php endforeach; ?>
                     </select>
                 </div>
@@ -460,7 +460,7 @@ function addProductForm(p) {
 
         // Render pattern checkboxes
         var checksHtml = patterns.map(function(pt) {
-            var label = esc(pt.name) + (parseInt(pt.is_default) === 1 ? ' <span class="text-muted">(default)</span>' : '');
+            var label = esc(pt.tamil_name || pt.name) + (parseInt(pt.is_default) === 1 ? ' <span class="text-muted">(default)</span>' : '');
             var checked = parseInt(pt.is_default) === 1 ? 'checked' : '';
             return '<div class="form-check form-check-inline me-3">' +
                 '<input class="form-check-input" type="checkbox" id="patcb_' + p.id + '_' + pt.id + '" ' + checked +

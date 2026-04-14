@@ -614,7 +614,7 @@ class Orders extends BaseController
             $item['variations']      = $variations;
             $item['variation_groups'] = $this->_groupAndSortVariations($variations);
             $item['qty_map']         = $qtyMap;
-            $item['patterns']        = $this->db->query('SELECT id, name, is_default FROM product_pattern WHERE product_id = ? ORDER BY is_default DESC, name', [$item['product_id']])->getResultArray();
+            $item['patterns']        = $this->db->query('SELECT id, name, tamil_name, is_default FROM product_pattern WHERE product_id = ? ORDER BY is_default DESC, name', [$item['product_id']])->getResultArray();
             $item['same_type_prev']  = ($item['product_type_id'] === $prevTypeId);
             $item['prev_qty_json']   = ($item['same_type_prev'] && $prevQtyMap) ? json_encode($prevQtyMap) : '{}';
             $item['weight_map']      = $this->_computeWeightMap($item['product_id'], $item['pattern_id'], $item['main_part_id'], $id);
@@ -2513,7 +2513,7 @@ class Orders extends BaseController
     public function getProductPatterns()
     {
         $productId = $this->request->getPost('product_id');
-        $rows = $this->db->query('SELECT id, name, is_default FROM product_pattern WHERE product_id = ? ORDER BY is_default DESC, name', [$productId])->getResultArray();
+        $rows = $this->db->query('SELECT id, name, tamil_name, is_default FROM product_pattern WHERE product_id = ? ORDER BY is_default DESC, name', [$productId])->getResultArray();
         return $this->response->setJSON(['patterns' => $rows]);
     }
 
