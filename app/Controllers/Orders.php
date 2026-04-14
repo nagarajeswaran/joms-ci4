@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 
 namespace App\Controllers;
 
@@ -314,7 +314,7 @@ class Orders extends BaseController
             $mainKanniPerInch  = isset($kanniMap[$mainPartId]) ? $kanniMap[$mainPartId]['kanni_per_inch'] : null;
             $kanniPerInch      = $mainKanniPerInch ?? 12.0;
 
-            // Main Part Recompute â€” mirrors PATH 1 in partCalcDetail
+            // Main Part Recompute — mirrors PATH 1 in partCalcDetail
             if ($mainPartId && $mainKanniPerInch !== null) {
                 $sumLength = 0;
                 foreach ($varStats as $vs) $sumLength += $vs['total_length'];
@@ -332,7 +332,7 @@ class Orders extends BaseController
 
             foreach ($effectiveBom as $bomRow) {
                 $partId  = $bomRow['part_id'];
-                // Skip main part â€” already handled by recompute above
+                // Skip main part — already handled by recompute above
                 if ((int)$partId === (int)$mainPartId && $mainKanniPerInch !== null) continue;
                 $partPcs = (float)($bomRow['part_pcs'] ?? 0);
                 $scale   = $bomRow['scale'] ?? '';
@@ -399,7 +399,7 @@ class Orders extends BaseController
 
             foreach ($cbomRows as $cbom) {
                 $partId  = $cbom['part_id'];
-                // Skip main part â€” already handled by recompute above
+                // Skip main part — already handled by recompute above
                 if ((int)$partId === (int)$mainPartId && $mainKanniPerInch !== null) continue;
                 $podiId  = $cbom['podi_id'] ?? null;
                 $cbomQtys = $this->db->query('SELECT * FROM product_customize_bill_of_material_quantity WHERE product_customize_bill_of_material_id = ?', [$cbom['id']])->getResultArray();
@@ -440,7 +440,7 @@ class Orders extends BaseController
 
             // Apply pattern CBOM overrides for ADD and REPLACE (new entries not in base CBOM)
             foreach ($cbomOverride as $ovPartId => $varOverrides) {
-                // Skip main part â€” already handled by recompute above
+                // Skip main part — already handled by recompute above
                 if ((int)$ovPartId === (int)$mainPartId && $mainKanniPerInch !== null) continue;
                 foreach ($varOverrides as $ovVarId => $ov) {
                     if (!isset($qtyMap[$ovVarId])) continue;
@@ -579,7 +579,7 @@ class Orders extends BaseController
                    p.product_type_id, p.main_part_id,
                    pt.name as type_name, pt.variations as pt_variations, pt.multiplication_factor,
                    b.clasp_size, b.name as body_name,
-                   pp.name as pattern_name, pp.tamil_name as pattern_tamil_name,
+                   pp.name as pattern_name,
                    s.name as stamp_name
             FROM order_items oi
             JOIN product p ON p.id = oi.product_id
@@ -946,7 +946,7 @@ class Orders extends BaseController
             if ($itemId > 0 && (int)$item['id'] !== $itemId) continue;
             $factor       = (float)($item['multiplication_factor'] ?? 1);
             $claspSize    = (float)($item['clasp_size'] ?? 0);
-            $productLabel = $item['product_name'] . ($item['pattern_name'] ? ' Ã¢â‚¬â€ ' . $item['pattern_name'] : '');
+            $productLabel = $item['product_name'] . ($item['pattern_name'] ? ' â€” ' . $item['pattern_name'] : '');
 
             $ptVarIds = [];
             if (!empty($item['pt_variations'])) {
@@ -1024,7 +1024,7 @@ class Orders extends BaseController
                 if ($scale === 'Per Pair')  $contrib = $sumRaw * $partPcs;
                 if ($scale === 'Per Kanni') $contrib = $sumLen * $kanniPerInch * $partPcs;
                 if (empty($rows)) continue;
-                $blocks[] = ['product_id' => (int)$item['product_id'], 'sku' => $item['sku'] ?? '', 'product' => $productLabel, 'source' => 'BOM Ã¢â‚¬â€ ' . $scale, 'scale' => $scale, 'bom_pcs' => $partPcs, 'kanni_per_inch' => $kanniPerInch, 'clasp_size' => $claspSize, 'factor' => $factor, 'vg_filter' => $vgRaw ?: '(all groups)', 'rows' => $rows, 'sum_length' => $sumLen, 'sum_raw' => $sumRaw, 'contribution' => $contrib];
+                $blocks[] = ['product_id' => (int)$item['product_id'], 'sku' => $item['sku'] ?? '', 'product' => $productLabel, 'source' => 'BOM â€” ' . $scale, 'scale' => $scale, 'bom_pcs' => $partPcs, 'kanni_per_inch' => $kanniPerInch, 'clasp_size' => $claspSize, 'factor' => $factor, 'vg_filter' => $vgRaw ?: '(all groups)', 'rows' => $rows, 'sum_length' => $sumLen, 'sum_raw' => $sumRaw, 'contribution' => $contrib];
             }
 
             // PATH 3: CBOM
@@ -1262,7 +1262,7 @@ class Orders extends BaseController
             }
         }
 
-        // Build mainSetup for view (use overrides or saved values â€” per-part aggregated weight for display)
+        // Build mainSetup for view (use overrides or saved values — per-part aggregated weight for display)
         $mainSetupForView = [];
         foreach ($perOrderSetup as $oid => $partMap) {
             foreach ($partMap as $mpId => $vals) {
@@ -1413,7 +1413,7 @@ class Orders extends BaseController
             $part     = $parts[$partId] ?? null;
             $tName    = trim($part['tamil_name'] ?? '');
             $pName    = $tName !== '' ? $tName : ($part ? $part['name'] : 'Part #' . $partId);
-            $deptName = $part['dept_name'] ?? 'Ã¢Â€Â”';
+            $deptName = $part['dept_name'] ?? 'â';
             $isMain   = !empty($part['is_main_part']);
             $gattiPkg = (float)($part['gatti'] ?? 0);
             $wpp      = ($isMain && isset($mainSetup[$partId])) ? (float)$mainSetup[$partId]['weight_per_kanni'] : (float)($part['weight'] ?? 0);
@@ -1422,7 +1422,7 @@ class Orders extends BaseController
             $gattiReq = $gattiPkg > 0 ? round($wt * $gattiPkg / 1000, 4) : 0;
             $totalWt += $wt; $totalGatti += $gattiReq;
             if ($deptName !== $currentDept) { $currentDept = $deptName; $html .= '<tr class="dept-row"><td colspan="6">' . htmlspecialchars($deptName) . '</td></tr>'; }
-            $html .= '<tr><td class="num">' . $i++ . '</td><td>' . htmlspecialchars($pName) . ($isMain ? ' *' : '') . '</td><td class="num">' . $pcs . '</td><td class="num">' . $wpp . '</td><td class="num">' . ($wt ?: 'Ã¢Â€Â”') . '</td><td class="num">' . ($gattiReq ?: 'Ã¢Â€Â”') . '</td></tr>';
+            $html .= '<tr><td class="num">' . $i++ . '</td><td>' . htmlspecialchars($pName) . ($isMain ? ' *' : '') . '</td><td class="num">' . $pcs . '</td><td class="num">' . $wpp . '</td><td class="num">' . ($wt ?: 'â') . '</td><td class="num">' . ($gattiReq ?: 'â') . '</td></tr>';
         }
         $html .= '</tbody><tfoot><tr><td colspan="4" style="text-align:right;">TOTAL</td><td class="num">' . round($totalWt, 4) . '</td><td class="num">' . round($totalGatti, 4) . '</td></tr></tfoot></table></body></html>';
 
@@ -1664,7 +1664,7 @@ class Orders extends BaseController
             $part     = $parts[$partId] ?? null;
             $tamilName = trim($part['tamil_name'] ?? '');
             $pName    = $tamilName !== '' ? $tamilName : ($part ? $part['name'] : '(Part #' . $partId . ')');
-            $deptName = $part['dept_name'] ?? 'Ã¢â‚¬â€';
+            $deptName = $part['dept_name'] ?? 'â€”';
             $isMain   = !empty($part['is_main_part']);
             $gattiPkg = (float)($part['gatti'] ?? 0);
 
@@ -1691,7 +1691,7 @@ class Orders extends BaseController
             $html .= '<td class="num">' . $pcs . '</td>';
             $html .= '<td class="num">' . $wpp . '</td>';
             $html .= '<td class="num">' . $wt . '</td>';
-            $html .= '<td class="num">' . ($gattiReq ?: 'Ã¢â‚¬â€') . '</td>';
+            $html .= '<td class="num">' . ($gattiReq ?: 'â€”') . '</td>';
             $html .= '</tr>';
         }
 
@@ -1894,7 +1894,7 @@ class Orders extends BaseController
         // Left column
         $html .= '<td width="33%" style="vertical-align:top;">';
         if (!empty($headerStamps)) {
-            $html .= '<div style="font-size:13px;font-weight:bold;">à®šà¯€à®²à¯ : ' . htmlspecialchars(implode(', ', $headerStamps)) . '</div>';
+            $html .= '<div style="font-size:13px;font-weight:bold;">சீல் : ' . htmlspecialchars(implode(', ', $headerStamps)) . '</div>';
         }
         $html .= '<div style="font-size:11px;color:#555;margin-top:2px;">' . date('d M Y', strtotime($order['created_at'])) . '</div>';
         $html .= '</td>';
@@ -1962,8 +1962,8 @@ class Orders extends BaseController
                 $html .= '<div class="product-block">';
                 $html .= '<div class="product-header">' . ($idx + 1) . '. ' . htmlspecialchars($displayName);
                 if (!empty($item['pattern_code'])) $html .= ' <span style="font-size:10px;color:#777;font-weight:normal;">[' . htmlspecialchars($item['pattern_code']) . ']</span>';
-                if ($item['stamp_name']) $html .= ' <span class="stamp-label">à®šà¯€à®²à¯ : ' . htmlspecialchars($item['stamp_name']) . '</span>';
-                if ($productTotal > 0) $html .= ' <span style="font-weight:normal;font-size:10px;color:#555;">â€” ' . $productTotal . ' pcs</span>';
+                if ($item['stamp_name']) $html .= ' <span class="stamp-label">சீல் : ' . htmlspecialchars($item['stamp_name']) . '</span>';
+                if ($productTotal > 0) $html .= ' <span style="font-weight:normal;font-size:10px;color:#555;">— ' . $productTotal . ' pcs</span>';
                 $html .= '</div>';
 
                 if (!empty($activeGroups)) {
@@ -2172,7 +2172,7 @@ class Orders extends BaseController
             $html .= '<td class="slip-left"><div class="slip-code-big">' . htmlspecialchars($item['pattern_code'] ?? '') . '</div>';
             $html .= '<div class="slip-date">' . date('d M Y', strtotime($order['created_at'])) . '</div></td>';
             $html .= '<td class="slip-centre">';
-            if (!empty($item['stamp_name'])) $html .= '<div class="slip-stamp">à®šà¯€à®²à¯ : ' . htmlspecialchars($item['stamp_name']) . '</div>';
+            if (!empty($item['stamp_name'])) $html .= '<div class="slip-stamp">சீல் : ' . htmlspecialchars($item['stamp_name']) . '</div>';
             $html .= '</td>';
             $html .= '<td class="slip-right"><div class="slip-order-no">Order #' . (int)$order['id'] . '</div>';
             $html .= '<div class="slip-weight">' . number_format($productEstWeight, 2) . ' g</div>';
@@ -2369,7 +2369,7 @@ class Orders extends BaseController
             $html .= '<td class="slip-left"><div class="slip-code-big">' . htmlspecialchars($item['pattern_code'] ?? '') . '</div>';
             $html .= '<div class="slip-date">' . date('d M Y', strtotime($order['created_at'])) . '</div></td>';
             $html .= '<td class="slip-centre">';
-            if (!empty($item['stamp_name'])) $html .= '<div class="slip-stamp">à®šà¯€à®²à¯ : ' . htmlspecialchars($item['stamp_name']) . '</div>';
+            if (!empty($item['stamp_name'])) $html .= '<div class="slip-stamp">சீல் : ' . htmlspecialchars($item['stamp_name']) . '</div>';
             $html .= '</td>';
             $html .= '<td class="slip-right"><div class="slip-order-no">Order #' . (int)$order['id'] . '</div>';
             $html .= '<div class="slip-weight">' . number_format($productEstWeight, 2) . ' g</div>';
@@ -2422,11 +2422,11 @@ class Orders extends BaseController
                 $partRows[] = ['name' => $pName, 'pcs' => $pcs, 'wt' => $wt];
             }
 
-            $html .= '<div class="parts-title">à®¤à¯‡à®µà¯ˆà®¯à®¾à®© à®ªà¯Šà®°à¯à®³à¯à®•à®³à¯</div>';
+            $html .= '<div class="parts-title">தேவையான பொருள்கள்</div>';
 
             $renderPartsTable = function(array $rows) use (&$html) {
                 $html .= '<table class="parts-table" style="width:100%;"><thead><tr>';
-                $html .= '<th>à®ªà¯Šà®°à¯à®³à¯</th><th>à®Žà®£à¯à®£à®¿à®•à¯à®•à¯ˆ</th><th>à®Žà®Ÿà¯ˆ</th>';
+                $html .= '<th>பொருள்</th><th>எண்ணிக்கை</th><th>எடை</th>';
                 $html .= '</tr></thead><tbody>';
                 if (empty($rows)) {
                     $html .= '<tr><td colspan="3" style="text-align:center;color:#999;">&mdash;</td></tr>';
@@ -2708,7 +2708,7 @@ class Orders extends BaseController
         )->getResultArray();
 
         return view('orders/split', [
-            'title' => 'Split Order Ã¢â‚¬â€ ' . $order['order_number'],
+            'title' => 'Split Order â€” ' . $order['order_number'],
             'order' => $order,
             'items' => $items,
             'clients' => $this->db->query('SELECT id, name FROM client ORDER BY name')->getResultArray(),
@@ -2732,7 +2732,7 @@ class Orders extends BaseController
             return redirect()->to('orders/split/' . $id)->with('error', 'Select at least one product to split');
         }
         if (count($selectedIds) >= count($allIds)) {
-            return redirect()->to('orders/split/' . $id)->with('error', 'Cannot move all products Ã¢â‚¬â€ at least one must remain');
+            return redirect()->to('orders/split/' . $id)->with('error', 'Cannot move all products â€” at least one must remain');
         }
 
         $remainingIds = array_diff($allIds, $selectedIds);
@@ -2961,5 +2961,4 @@ class Orders extends BaseController
             ->with('success', count($rows) . ' low stock item(s) added as draft order. Fill in client details and confirm.');
     }
 }
-
 
