@@ -31,7 +31,7 @@ class MeltJob extends BaseController
     public function create()
     {
         $db = \Config\Database::connect();
-        $karigars = $db->query('SELECT id, name, default_cash_rate, default_fine_pct FROM karigar ORDER BY name')->getResultArray();
+        $karigars = $db->query("SELECT k.id, k.name, k.default_cash_rate, k.default_fine_pct FROM karigar k INNER JOIN department d ON d.id = k.department_id WHERE d.name = 'Melting' ORDER BY k.name")->getResultArray();
         $rawTypes = $db->query('SELECT id, name, default_touch_pct FROM raw_material_type ORDER BY name')->getResultArray();
         $kachas   = $db->query("SELECT id, lot_number as name, touch_pct, weight, fine FROM kacha_lot WHERE status='available' ORDER BY lot_number")->getResultArray();
         $byprods  = $db->query('SELECT id, name FROM byproduct_type ORDER BY name')->getResultArray();
@@ -328,3 +328,4 @@ class MeltJob extends BaseController
         }
     }
 }
+

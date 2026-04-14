@@ -28,7 +28,8 @@ class Karigar extends BaseController
             'default_fine_pct'  => $this->request->getPost('default_fine_pct') ?: 0,
             'notes'             => $this->request->getPost('notes'),
         ]);
-        return redirect()->to('karigar')->with('success', 'Karigar added');
+        $newId = $db->insertID();
+        return redirect()->to('karigar/edit/' . $newId)->with('success', 'Karigar added. You can now add making charge rules below.');
     }
 
     public function edit($id)

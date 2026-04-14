@@ -671,6 +671,7 @@ class PartOrder extends BaseController
         if (!$po || $po['status'] === 'posted') return redirect()->to('part-orders/view/'.$issue['part_order_id'])->with('error', 'Cannot modify');
 
         $newWeight = (float)$this->request->getPost('weight_g');
+        $newTouch  = (float)($this->request->getPost('touch_pct') ?? 0);
         if ($newWeight <= 0) return redirect()->to('part-orders/view/'.$issue['part_order_id'])->with('error', 'Weight must be > 0');
 
         $oldWeight = (float)$issue['weight_g'];
@@ -682,7 +683,7 @@ class PartOrder extends BaseController
                 return redirect()->to('part-orders/view/'.$issue['part_order_id'])->with('error', 'Not enough stock. Available: '.number_format($available,4).'g');
             }
             $db->query('UPDATE part_batch SET weight_in_stock_g = GREATEST(0, weight_in_stock_g + ? - ?) WHERE id = ?', [$oldWeight, $newWeight, $issue['part_batch_id']]);
-            $db->query('UPDATE part_order_issue SET weight_g = ? WHERE id = ?', [$newWeight, $issueId]);
+            $db->query('UPDATE part_order_issue SET weight_g = ?, touch_pct = ? WHERE id = ?', [$newWeight, $newTouch, $issueId]);
         } else {
             $gatti     = $db->query('SELECT * FROM gatti_stock WHERE id = ?', [$issue['gatti_stock_id']])->getRowArray();
             $newStamp  = $this->request->getPost('stamp_id') ?: null;
@@ -691,7 +692,7 @@ class PartOrder extends BaseController
                 return redirect()->to('part-orders/view/'.$issue['part_order_id'])->with('error', 'Not enough gatti. Available: '.number_format($available,4).'g');
             }
             $db->query('UPDATE gatti_stock SET qty_issued_g = qty_issued_g - ? + ? WHERE id = ?', [$oldWeight, $newWeight, $issue['gatti_stock_id']]);
-            $db->query('UPDATE part_order_issue SET weight_g = ?, stamp_id = ? WHERE id = ?', [$newWeight, $newStamp, $issueId]);
+            $db->query('UPDATE part_order_issue SET weight_g = ?, stamp_id = ?, touch_pct = ? WHERE id = ?', [$newWeight, $newStamp, $newTouch, $issueId]);
         }
 
         return redirect()->to('part-orders/view/'.$issue['part_order_id'])->with('success', 'Issue updated');

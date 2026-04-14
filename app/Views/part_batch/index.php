@@ -5,6 +5,7 @@
     <div class="d-flex gap-2">
         <a href="<?= base_url('part-stock/entry') ?>" class="btn btn-success btn-sm"><i class="bi bi-plus-circle"></i> Stock Entry</a>
         <a href="<?= base_url('part-stock/labels') ?>" class="btn btn-primary btn-sm"><i class="bi bi-printer"></i> Generate Labels</a>
+        <a href="<?= base_url('part-stock/import') ?>" class="btn btn-outline-secondary btn-sm"><i class="bi bi-upload"></i> Import</a>
     </div>
 </div>
 <form method="get" class="row g-2 mb-3">

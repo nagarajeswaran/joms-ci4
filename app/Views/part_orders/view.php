@@ -98,7 +98,7 @@
     <td><?= date('d/m/Y H:i', strtotime($row['issued_at'])) ?></td>
     <?php if ($po['status']==='draft'): ?>
     <td class="text-nowrap">
-        <button class="btn btn-sm btn-outline-warning" onclick="toggleEditIssue(<?= $row['id'] ?>, <?= $row['weight_g'] ?>, <?= $row['gatti_stock_id'] ?>)">Edit</button>
+        <button class="btn btn-sm btn-outline-warning" onclick="toggleEditIssue(<?= $row['id'] ?>, <?= $row['weight_g'] ?>, <?= $row['gatti_stock_id'] ?>, <?= (float)$row['touch_pct'] ?>)">Edit</button>
         <a href="<?= base_url('part-orders/delete-issue/'.$row['id']) ?>" class="btn btn-sm btn-outline-danger" onclick="return confirm('Delete?')">Del</a>
     </td>
     <?php endif; ?>
@@ -109,6 +109,7 @@
         <form method="post" action="<?= base_url('part-orders/issue/'.$row['id'].'/update') ?>" class="row g-2 align-items-center">
         <?= csrf_field() ?>
             <div class="col-auto"><input type="number" step="0.0001" name="weight_g" class="form-control form-control-sm" placeholder="Weight (g)" id="edit-issue-wt-<?= $row['id'] ?>" required style="width:130px"></div>
+            <div class="col-auto"><input type="number" step="0.0001" name="touch_pct" class="form-control form-control-sm" placeholder="Touch%" id="edit-issue-tp-<?= $row['id'] ?>" style="width:100px"></div>
             <div class="col-auto">
                 <select name="stamp_id" class="form-select form-select-sm" style="width:140px">
                     <option value="">-- Stamp --</option>
@@ -525,12 +526,14 @@ function fillGattiTouch(sel) {
     }
 }
 
-function toggleEditIssue(id, wt, gsId) {
+function toggleEditIssue(id, wt, gsId, touch) {
     var editRow = document.getElementById('issue-edit-' + id);
     var wtInput = document.getElementById('edit-issue-wt-' + id);
+    var tpInput = document.getElementById('edit-issue-tp-' + id);
     if (editRow.style.display === 'none') {
         editRow.style.display = '';
         if (wtInput && wt !== undefined) wtInput.value = wt;
+        if (tpInput && touch !== undefined) tpInput.value = touch;
     } else {
         editRow.style.display = 'none';
     }

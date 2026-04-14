@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 
 use CodeIgniter\Router\RouteCollection;
 
@@ -38,6 +38,10 @@ $routes->post('departments/store', 'Departments::store');
 $routes->get('departments/edit/(:num)', 'Departments::edit/$1');
 $routes->post('departments/update/(:num)', 'Departments::update/$1');
 $routes->get('departments/delete/(:num)', 'Departments::delete/$1');
+// Department Groups
+$routes->post('departments/groups/store', 'Departments::groupStore');
+$routes->post('departments/groups/update/(:num)', 'Departments::groupUpdate/$1');
+$routes->get('departments/groups/delete/(:num)', 'Departments::groupDelete/$1');
 
 // Parts
 $routes->get('parts', 'Parts::index');
@@ -264,6 +268,10 @@ $routes->get( 'part-stock/stock-log/(:num)/edit',        'PartBatch::editStockEn
 $routes->post('part-stock/stock-log/(:num)/update',      'PartBatch::updateStockEntry/$1');
 $routes->get( 'part-stock/stock-log/(:num)/delete',      'PartBatch::deleteStockEntry/$1');
 $routes->post('part-stock/batch/(:num)/entry',      'PartBatch::saveStockEntry/$1');
+$routes->get( 'part-stock/import',                  'PartBatch::importForm');
+$routes->post('part-stock/import/preview',          'PartBatch::importPreview');
+$routes->post('part-stock/import/confirm',          'PartBatch::importConfirm');
+$routes->get( 'part-stock/import/sample',           'PartBatch::importSample');
 
 // Melt Jobs
 $routes->get('melt-jobs', 'MeltJob::index');

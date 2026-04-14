@@ -89,11 +89,10 @@
     <div class="col-md-5">
         <label class="form-label form-label-sm">Basis *</label>
         <select name="basis" class="form-select form-select-sm" id="ruleBasis" onchange="updateRuleFilter()" required>
-            <option value="issued_all">Issued — All (Gatti + Parts)</option>
-            <option value="issued_gatti_only">Issued — Gatti Only</option>
-            <option value="issued_filtered">Issued — Specific Parts (issued to karigar as parts)</option>
+            <option value="issued_all">Issued — All gatti</option>
+            <option value="issued_filtered">Issued — Specific gatti</option>
             <option value="received_all">Received — All</option>
-            <option value="received_filtered">Received — Specific Parts</option>
+            <option value="received_filtered">Received — Specific parts</option>
         </select>
     </div>
     <div class="col">
@@ -110,10 +109,34 @@
     </div>
 </div>
 
-<!-- PARTS GRID (issued_filtered or received_filtered) -->
+<!-- GATTI GRID (issued_filtered) -->
+<div id="gattiGrid" style="display:none" class="mb-3">
+    <label class="form-label form-label-sm fw-semibold">Select Gatti Batches</label>
+    <input type="text" class="form-control form-control-sm mb-2" placeholder="Search batch / touch..." id="gattiSearch" oninput="filterGrid('gattiTable', this.value)">
+    <div style="max-height:200px;overflow-y:auto;border:1px solid #dee2e6;border-radius:4px;">
+    <table class="table table-sm table-hover mb-0" id="gattiTable">
+    <thead class="table-secondary sticky-top"><tr>
+        <th style="width:36px"><input type="checkbox" class="form-check-input" onchange="toggleAll('gattiTable',this)"></th>
+        <th>Batch No</th><th>Touch%</th><th>Available (g)</th>
+    </tr></thead>
+    <tbody>
+    <?php foreach ($gattiList ?? [] as $g): ?>
+    <tr>
+        <td><input type="checkbox" class="form-check-input" name="filter_ids[]" value="<?= $g['id'] ?>"></td>
+        <td><?= esc($g['label']) ?></td>
+        <td><?= $g['touch_pct'] ?>%</td>
+        <td><?= number_format($g['avail'],2) ?></td>
+    </tr>
+    <?php endforeach; ?>
+    </tbody>
+    </table>
+    </div>
+</div>
+
+<!-- PARTS GRID (received_filtered) -->
 <div id="partsGrid" style="display:none" class="mb-3">
-    <label class="form-label form-label-sm fw-semibold" id="partsGridLabel">Select Parts</label>
-    <input type="text" class="form-control form-control-sm mb-2" placeholder="Search part name..." oninput="filterGrid('partsTable', this.value)">
+    <label class="form-label form-label-sm fw-semibold">Select Parts</label>
+    <input type="text" class="form-control form-control-sm mb-2" placeholder="Search part name..." id="partsSearch" oninput="filterGrid('partsTable', this.value)">
     <div style="max-height:200px;overflow-y:auto;border:1px solid #dee2e6;border-radius:4px;">
     <table class="table table-sm table-hover mb-0" id="partsTable">
     <thead class="table-secondary sticky-top"><tr>
@@ -145,22 +168,25 @@
 <script>
 function updateRuleFilter() {
     var basis = document.getElementById('ruleBasis').value;
-    var partsGrid = document.getElementById('partsGrid');
-    var label     = document.getElementById('partsGridLabel');
-    var hiddenFT  = document.getElementById('hiddenFilterType');
+    var gattiGrid  = document.getElementById('gattiGrid');
+    var partsGrid  = document.getElementById('partsGrid');
+    var hiddenFT   = document.getElementById('hiddenFilterType');
 
+    // Uncheck everything when switching
+    document.querySelectorAll('#gattiTable input[type=checkbox]').forEach(function(c){ c.checked=false; });
     document.querySelectorAll('#partsTable input[type=checkbox]').forEach(function(c){ c.checked=false; });
 
     if (basis === 'issued_filtered') {
-        partsGrid.style.display = '';
-        label.textContent = 'Select Parts (that are issued to this karigar)';
-        hiddenFT.value = 'by_part';
+        gattiGrid.style.display  = '';
+        partsGrid.style.display  = 'none';
+        hiddenFT.value = 'by_gatti';
     } else if (basis === 'received_filtered') {
-        partsGrid.style.display = '';
-        label.textContent = 'Select Parts (received from this karigar)';
+        gattiGrid.style.display  = 'none';
+        partsGrid.style.display  = '';
         hiddenFT.value = 'by_part';
     } else {
-        partsGrid.style.display = 'none';
+        gattiGrid.style.display  = 'none';
+        partsGrid.style.display  = 'none';
         hiddenFT.value = 'none';
     }
 }

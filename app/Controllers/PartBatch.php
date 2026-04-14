@@ -13,7 +13,6 @@ class PartBatch extends BaseController
             ->select('pb.*, p.name as part_name, p.tamil_name as part_tamil, s.name as stamp_name')
             ->join('part p', 'p.id = pb.part_id', 'left')
             ->join('stamp s', 's.id = pb.stamp_id', 'left')
-            ->where('EXISTS (SELECT 1 FROM part_batch_stock_log pbl WHERE pbl.part_batch_id = pb.id)', null, false)
             ->orderBy('pb.created_at', 'DESC');
 
         if ($partFilter)  $builder->where('pb.part_id', $partFilter);
@@ -430,5 +429,181 @@ class PartBatch extends BaseController
 
         $action = $entryType === 'out' ? 'Removed' : 'Added';
         return redirect()->to('part-stock/entry?batch=' . urlencode($batchNo))->with('success', $action . ' ' . number_format($weightG, 4) . 'g successfully');
+    }
+
+    // ── IMPORT ──────────────────────────────────────────────────────────
+    public function importForm()
+    {
+        return view('part_batch/import_form', ['title' => 'Import Part Stock']);
+    }
+
+    public function importSample()
+    {
+        $csv  = "Part Name,Batch Number,Weight (g),Weight/pc (g),Touch %,Stamp,Date\n";
+        $csv .= "Gubba 150,BATCH-001,5000,2.5,0,,2024-01-01\n";
+        $csv .= "Gubba 180,BATCH-002,3000,3.1,75,,2024-01-01\n";
+        header('Content-Type: text/csv');
+        header('Content-Disposition: attachment; filename="part_stock_sample.csv"');
+        echo $csv;
+        exit;
+    }
+
+    public function importPreview()
+    {
+        $file = $this->request->getFile('import_file');
+        if (!$file || !$file->isValid()) {
+            return redirect()->to('part-stock/import')->with('error', 'Please upload a valid file');
+        }
+        $ext  = strtolower($file->getClientExtension());
+        if (!in_array($ext, ['csv', 'xlsx'])) {
+            return redirect()->to('part-stock/import')->with('error', 'Only CSV and XLSX files are supported');
+        }
+
+        $tmpPath = $file->getTempName();
+        $db      = \Config\Database::connect();
+
+        // Load parts and stamps for lookup
+        $partRows  = $db->query('SELECT id, LOWER(name) AS lname FROM part')->getResultArray();
+        $partMap   = array_column($partRows, 'id', 'lname');
+        $stampRows = $db->query('SELECT id, LOWER(name) AS lname FROM stamp')->getResultArray();
+        $stampMap  = array_column($stampRows, 'id', 'lname');
+        $existBatches = array_column(
+            $db->query('SELECT batch_number FROM part_batch')->getResultArray(),
+            'batch_number'
+        );
+        $existBatchSet = array_flip($existBatches);
+
+        // Parse file
+        require_once ROOTPATH . 'vendor/autoload.php';
+        if ($ext === 'csv') {
+            $reader = new \PhpOffice\PhpSpreadsheet\Reader\Csv();
+            // Detect encoding — Excel CSVs are UTF-8 with BOM or Windows-1252
+            $sample = file_get_contents($tmpPath, false, null, 0, 4096);
+            if (str_starts_with($sample, "\xEF\xBB\xBF")) {
+                $reader->setInputEncoding('UTF-8');
+            } elseif (mb_check_encoding($sample, 'UTF-8')) {
+                $reader->setInputEncoding('UTF-8');
+            } else {
+                $reader->setInputEncoding('Windows-1252');
+            }
+        } else {
+            $reader = new \PhpOffice\PhpSpreadsheet\Reader\Xlsx();
+        }
+        $spreadsheet = $reader->load($tmpPath);
+        $sheet       = $spreadsheet->getActiveSheet();
+        $rows        = $sheet->toArray(null, true, true, false);
+
+        $preview = [];
+        foreach ($rows as $i => $row) {
+            if ($i === 0) continue; // skip header
+            $partName      = trim((string)($row[0] ?? ''));
+            $batchNo       = trim((string)($row[1] ?? ''));
+            $weightG       = (float)($row[2] ?? 0);
+            $pieceWeightG  = (float)($row[3] ?? 0);
+            $touchPct      = (float)($row[4] ?? 0);
+            $stampName     = trim(strtolower((string)($row[5] ?? '')));
+            $date          = trim((string)($row[6] ?? '')) ?: date('Y-m-d');
+
+            if (!$partName || !$batchNo || $weightG <= 0) {
+                $preview[] = compact('partName','batchNo','weightG','pieceWeightG','touchPct','stampName','date') + ['status'=>'error','reason'=>'Missing required field'];
+                continue;
+            }
+            if (isset($existBatchSet[$batchNo])) {
+                $preview[] = compact('partName','batchNo','weightG','pieceWeightG','touchPct','stampName','date') + ['status'=>'duplicate','reason'=>'Batch number already exists'];
+                continue;
+            }
+            $partKey  = strtolower($partName);
+            $isNew    = !isset($partMap[$partKey]);
+            $partId   = $isNew ? null : $partMap[$partKey];
+            $stampId  = $stampName ? ($stampMap[$stampName] ?? null) : null;
+            $status   = $isNew ? 'new_part' : 'ready';
+            $preview[] = compact('partName','partId','batchNo','weightG','pieceWeightG','touchPct','stampId','stampName','date','isNew') + ['status'=>$status,'reason'=>''];
+        }
+
+        $allParts = $db->query('SELECT id, name FROM part ORDER BY name')->getResultArray();
+        session()->set('import_preview', $preview);
+        return view('part_batch/import_preview', ['title'=>'Import Preview', 'rows'=>$preview, 'allParts'=>$allParts]);
+    }
+
+    public function importConfirm()
+    {
+        $rows = session()->get('import_preview');
+        if (!$rows) return redirect()->to('part-stock/import')->with('error', 'Session expired. Please re-upload.');
+
+        $db      = \Config\Database::connect();
+        $mapping      = $this->request->getPost('mapping') ?? [];
+        $include      = $this->request->getPost('include') ?? [];
+        $createdParts = [];   // cache: lowercase name → part_id (within this import run)
+        $imported = 0;
+        $newParts = 0;
+        $mapped   = 0;
+
+        foreach ($rows as $i => $row) {
+            if (!in_array($row['status'], ['ready', 'new_part'])) continue;
+            if (!isset($include[$i])) continue;   // user unchecked this row
+            $partId = $row['partId'] ?? null;
+            if ($row['status'] === 'new_part') {
+                $chosen = $mapping[$i] ?? '';
+                if ($chosen !== '') {
+                    $partId = (int)$chosen;
+                    $mapped++;
+                } else {
+                    $key = strtolower(trim($row['partName']));
+                    if (isset($createdParts[$key])) {
+                        $partId = $createdParts[$key];   // reuse — already created this run
+                    } else {
+                        // Fetch the lowest department_id to satisfy NOT NULL FK
+                        static $defaultDeptId = null;
+                        if ($defaultDeptId === null) {
+                            $r = $db->query('SELECT MIN(id) AS d FROM department')->getRow();
+                            $defaultDeptId = (int)($r->d ?? 0);
+                        }
+                        $db->table('part')->insert([
+                            'name'          => $row['partName'],
+                            'tamil_name'    => '',
+                            'weight'        => '',
+                            'pcs'           => '',
+                            'is_main_part'  => 0,
+                            'department_id' => $defaultDeptId,
+                            'gatti'         => 0,
+                            'image'         => '',
+                            'created_at'    => date('Y-m-d H:i:s'),
+                            'updated_at'    => date('Y-m-d H:i:s'),
+                        ]);
+                        $partId = $db->insertID();
+                        $createdParts[$key] = $partId;
+                        $newParts++;
+                    }
+                }
+            }
+            $db->table('part_batch')->insert([
+                'part_id'            => $partId,
+                'batch_number'       => $row['batchNo'],
+                'weight_in_stock_g'  => $row['weightG'],
+                'piece_weight_g'     => $row['pieceWeightG'] ?: null,
+                'touch_pct'          => $row['touchPct'],
+                'stamp_id'           => $row['stampId'] ?? null,
+                'created_at'         => $row['date'],
+            ]);
+            $batchId = $db->insertID();
+            $db->table('part_batch_stock_log')->insert([
+                'part_batch_id' => $batchId,
+                'entry_type'    => 'in',
+                'reason'        => 'Imported',
+                'weight_g'      => $row['weightG'],
+                'qty'           => 0,
+                'piece_weight_g'=> $row['pieceWeightG'] ?: null,
+                'touch_pct'     => $row['touchPct'] ?: null,
+                'stamp_id'      => $row['stampId'] ?? null,
+                'created_at'    => $row['date'],
+            ]);
+            $imported++;
+        }
+
+        session()->remove('import_preview');
+        $msg = "{$imported} rows imported";
+        if ($newParts) $msg .= " · {$newParts} new parts created";
+        if ($mapped)   $msg .= " · {$mapped} mapped to existing";
+        return redirect()->to('part-stock')->with('success', $msg);
     }
 }
