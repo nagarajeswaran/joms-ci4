@@ -313,6 +313,7 @@ document.getElementById('btnGenerate').addEventListener('click', function() {
         var fsPat  = Math.max(3, Math.round(lh * 0.11));
         var fsSz   = Math.max(7, Math.round(lh * 0.30));
         var fsNum  = Math.max(7, Math.round(lh * 0.30));
+        var fsName = Math.max(8, Math.round(lh * 0.26));
         var previewW  = Math.round(lw * 3.7795);
         var previewH  = Math.round(lh * 3.7795);
         var previewQR = Math.round(qrSz * 3.7795);
@@ -327,21 +328,23 @@ document.getElementById('btnGenerate').addEventListener('click', function() {
                 var card = document.createElement('div');
                 card.className = 'label-card';
                 card.style.cssText = 'width:' + previewW + 'px;height:' + previewH + 'px;box-sizing:border-box;display:flex;align-items:center;padding:2px;overflow:hidden;';
-                var patLine = (!lbl.pat_is_default && lbl.pattern_label) ? lbl.pattern_label : '';
-                var sizeTxt = lbl.size ? lbl.size + ' INCH' : lbl.variation_name.toUpperCase();
+                var patLine = lbl.pattern_code ? lbl.pattern_code : '';
+                var sizeTxt = lbl.size ? lbl.size : lbl.variation_name.toUpperCase();
                 var sideW = Math.round(previewW * 0.18);
                 card.innerHTML =
-                    '<div style="flex:0 0 ' + sideW + 'px;display:flex;align-items:center;justify-content:center;font-size:' + fsNum + 'px;font-weight:900;font-family:monospace;text-align:center;">#' + lbl.qr_number + '</div>'
+                    '<div style="flex:0 0 ' + sideW + 'px;display:flex;align-items:center;justify-content:center;font-size:' + fsNum + 'px;font-weight:900;font-family:monospace;text-align:center;padding-left:3px;writing-mode:vertical-rl;transform:rotate(180deg);">#' + lbl.qr_number + '</div>'
                     + '<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:0;overflow:hidden;">'
-                    + '<div style="font-size:' + (fsProd+2) + 'px;font-weight:bold;text-transform:uppercase;text-align:center;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;max-width:100%;">' + lbl.product_label + '</div>'
+                    + '<div style="font-size:' + fsName + 'px;font-weight:bold;text-transform:uppercase;text-align:center;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;max-width:100%;">' + lbl.pattern_label + '</div>'
                     + '<div style="display:flex;align-items:center;justify-content:center;"><svg class="bc" data-val="' + lbl.qr_number + '" style="display:block;"></svg></div>'
-                    + (patLine ? '<div style="font-size:' + (fsProd+2) + 'px;color:#555;font-style:italic;text-align:center;">' + patLine + '</div>' : '')
+                    + (patLine ? '<div style="font-size:' + fsName + 'px;font-weight:bold;text-align:center;margin-top:3px;">' + patLine + '</div>' : '')
                     + '</div>'
-                    + '<div style="flex:0 0 ' + sideW + 'px;display:flex;align-items:center;justify-content:center;font-size:' + fsSz + 'px;font-weight:900;text-align:center;word-break:break-word;text-transform:uppercase;">' + sizeTxt + '</div>';
+                    + '<div style="flex:0 0 ' + sideW + 'px;display:flex;align-items:center;justify-content:center;padding-right:4px;">'
+                    + '<div style="width:' + (sideW-4) + 'px;height:' + (sideW-4) + 'px;border-radius:50%;border:2px solid #1a1a1a;display:flex;align-items:center;justify-content:center;font-size:' + fsSz + 'px;font-weight:900;line-height:1;text-align:center;word-break:break-word;text-transform:uppercase;">' + sizeTxt + '</div>'
+                    + '</div>';
 
-                card.dataset.prod = lbl.product_label || '';
+                card.dataset.prod = lbl.pattern_label || '';
                 card.dataset.sku  = lbl.sku || '';
-                card.dataset.pat  = (!lbl.pat_is_default && lbl.pattern_label) ? lbl.pattern_label : '';
+                card.dataset.pat  = lbl.pattern_code || '';
                 card.dataset.num  = lbl.qr_number || '';
                 card.dataset.sz   = sizeTxt;
                 sheet.appendChild(card);
@@ -388,6 +391,7 @@ function printLabels() {
     var fsPat  = Math.max(2, Math.round(lh * 0.11));
     var fsSz   = Math.max(5, Math.round(lh * 0.30));
     var fsNum  = Math.max(5, Math.round(lh * 0.30));
+    var fsName = Math.max(6, Math.round(lh * 0.26));
     // barcode: fill 90% of center column (lw minus two 18% sides), height ~48% of label height
     var sideWmm  = lw * 0.18;
     var bcWmm    = (lw - sideWmm * 2) * 0.90;
@@ -397,12 +401,12 @@ function printLabels() {
         + '.label-page{display:grid;grid-template-columns:repeat(' + cols + ',calc(' + phys.w + '/' + cols + '));grid-template-rows:repeat(' + rows + ',calc(' + phys.h + '/' + rows + '));width:' + phys.w + ';height:' + phys.h + ';overflow:hidden;gap:0;page-break-after:always;break-after:page}'
         + '.label-page:last-child{page-break-after:avoid;break-after:avoid}'
         + '.label-card{box-sizing:border-box;overflow:hidden;display:flex;align-items:center;padding:0.3mm;border-right:0.4px solid #aaa;border-bottom:0.4px solid #aaa}'
-        + '.lc-side{flex:0 0 auto;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0 0.5mm}'
-        + '.lc-num{font-size:' + fsNum + 'pt;font-weight:900;font-family:monospace;line-height:1;text-align:center}'
-        + '.lc-sz{font-size:' + fsSz + 'pt;font-weight:900;line-height:1;text-align:center;word-break:break-word;text-transform:uppercase}'
+        + '.lc-side{flex:0 0 auto;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0 1.5mm 0 1.5mm}'
+        + '.lc-num{font-size:' + fsNum + 'pt;font-weight:900;font-family:monospace;line-height:1;text-align:center;writing-mode:vertical-rl;transform:rotate(180deg)}'
+        + '.lc-sz{font-size:' + fsSz + 'pt;font-weight:900;line-height:1;text-align:center;word-break:break-word;text-transform:uppercase;width:calc(' + lw*0.18 + 'mm - 3mm);height:calc(' + lw*0.18 + 'mm - 3mm);border-radius:50%;border:1.5pt solid #1a1a1a;display:flex;align-items:center;justify-content:center;}'
         + '.lc-center{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:0;overflow:hidden}'
-        + '.lc-name{font-size:' + fsProd + 'pt;font-weight:bold;text-align:center;text-transform:uppercase;line-height:1.1;overflow:hidden;max-width:100%}'
-        + '.lc-pat{font-size:' + fsProd + 'pt;font-style:italic;color:#444;text-align:center;line-height:1;overflow:hidden;max-width:100%}'
+        + '.lc-name{font-size:' + fsName + 'pt;font-weight:bold;text-align:center;text-transform:uppercase;line-height:1.1;overflow:hidden;max-width:100%}'
+        + '.lc-pat{font-size:' + fsName + 'pt;font-weight:bold;text-align:center;line-height:1;overflow:hidden;max-width:100%;margin-top:0.8mm}'
         + '.lc-qr{width:100%}';
     css += '.lc-qr svg{display:block;width:' + bcWmm.toFixed(1) + 'mm;height:auto;max-width:100%}';
 

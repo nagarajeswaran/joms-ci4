@@ -296,7 +296,7 @@ class Stock extends BaseController
             if (!$pid || !$patid || !$vid) continue;
 
             $product   = $this->db->query('SELECT id, name, short_name, sku FROM product WHERE id=?', [$pid])->getRowArray();
-            $pattern   = $this->db->query('SELECT id, name, short_name, is_default FROM product_pattern WHERE id=?', [$patid])->getRowArray();
+            $pattern   = $this->db->query('SELECT id, name, short_name, pattern_code, is_default FROM product_pattern WHERE id=?', [$patid])->getRowArray();
             $variation = $this->db->query('SELECT id, name, size FROM variation WHERE id=?', [$vid])->getRowArray();
             if (!$product || !$pattern || !$variation) continue;
 
@@ -313,7 +313,8 @@ class Stock extends BaseController
                 'product_label'   => ($product['short_name'] ?? '') ?: $product['name'],
                 'sku'             => $product['sku'] ?? '',
                 'pattern_name'    => $pattern['name'],
-                'pattern_label'   => $pattern['is_default'] ? '' : (($pattern['short_name'] ?? '') ?: $pattern['name']),
+                'pattern_label'   => ($pattern['short_name'] ?? '') ?: $pattern['name'],
+                'pattern_code'    => $pattern['pattern_code'] ?? '',
                 'pat_is_default'  => (bool)$pattern['is_default'],
                 'variation_name'  => $variation['name'],
                 'size'            => $variation['size'],
