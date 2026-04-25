@@ -60,7 +60,7 @@
                     <label class="form-label">Product Image</label>
                     <?php if (!empty($item['image'])): ?>
                     <div class="mb-2">
-                        <img src="<?= base_url('uploads/products/' . $item['image']) ?>" style="height:64px;border-radius:4px;border:1px solid #ddd;object-fit:cover;" alt="Current image">
+                        <img src="<?= upload_url('products/' . $item['image']) ?>" style="height:64px;border-radius:4px;border:1px solid #ddd;object-fit:cover;" alt="Current image">
                         <div class="mt-1"><label class="small text-danger"><input type="checkbox" name="remove_image" value="1"> Remove image</label></div>
                     </div>
                     <?php endif; ?>

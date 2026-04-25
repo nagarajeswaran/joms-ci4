@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 
 use CodeIgniter\Router\RouteCollection;
 
@@ -174,6 +174,7 @@ $routes->post('stock/save-transfer', 'Stock::saveTransfer');
 $routes->get('stock/low-stock', 'Stock::lowStock');
 $routes->post('stock/set-min-qty', 'Stock::setMinQty');
 $routes->get('stock/audit-log', 'Stock::auditLog');
+$routes->post('stock/edit-note/(:num)', 'Stock::editNote/$1');
 $routes->get('stock/label-generate', 'Stock::labelGenerate');
 $routes->get('stock/qr-registry',    'Stock::qrRegistry');
 $routes->post('stock/bulk-generate-qr', 'Stock::bulkGenerateQr');
@@ -188,6 +189,7 @@ $routes->post('products/bulkConfirm',                    'Products::bulkConfirm'
 $routes->get('products/imageGallery',                    'Products::imageGallery');
 $routes->post('products/ajaxUploadProductImage/(:num)',  'Products::ajaxUploadProductImage/$1');
 $routes->post('products/ajaxUploadPatternImage/(:num)',  'Products::ajaxUploadPatternImage/$1');
+$routes->get('products/cleanBrokenImages',               'Products::cleanBrokenImages');
 $routes->get('stock/fix-qr-dupes',      'Stock::fixQrDupes');
 $routes->get('stock/min-stock',       'Stock::minStock');
 $routes->post('stock/save-min-stock', 'Stock::saveMinStock');
@@ -231,6 +233,14 @@ $routes->post('kacha/update/(:num)', 'Kacha::update/$1');
 $routes->get('kacha/delete/(:num)', 'Kacha::delete/$1');
 $routes->get('kacha/view/(:num)', 'Kacha::view/$1');
 $routes->post('kacha/list-available', 'Kacha::listAvailable');
+
+// Raw Material Batches
+$routes->get('raw-material-batches', 'RawMaterialBatch::index');
+$routes->get('raw-material-batches/create', 'RawMaterialBatch::create');
+$routes->post('raw-material-batches/store', 'RawMaterialBatch::store');
+$routes->get('raw-material-batches/view/(:num)', 'RawMaterialBatch::view/$1');
+$routes->post('raw-material-batches/add-stock/(:num)', 'RawMaterialBatch::addStock/$1');
+$routes->get('raw-material-batches/entry', 'RawMaterialBatch::entry');
 
 // Raw Material Stock
 $routes->get('raw-materials', 'RawMaterialStock::index');
@@ -284,6 +294,19 @@ $routes->get('melt-jobs/delete-input/(:num)', 'MeltJob::deleteInput/$1');
 $routes->post('melt-jobs/add-receive/(:num)', 'MeltJob::addReceive/$1');
 $routes->get('melt-jobs/delete-receive/(:num)', 'MeltJob::deleteReceive/$1');
 $routes->post('melt-jobs/post/(:num)', 'MeltJob::post/$1');
+$routes->post('melt-jobs/update-receive/(:num)', 'MeltJob::updateReceive/$1');
+$routes->post('melt-jobs/update-field/(:num)',   'MeltJob::updateField/$1');
+$routes->post('melt-jobs/apply-touch-to-all/(:num)', 'MeltJob::applyTouchToAll/$1');
+
+// Touch Ledger
+$routes->get( 'touch-shops',                      'TouchShop::index');
+$routes->get( 'touch-shops/create',               'TouchShop::create');
+$routes->post('touch-shops/store',                'TouchShop::store');
+$routes->post('touch-shops/receive-back/(:num)',   'TouchShop::receiveBack/$1');
+$routes->get( 'touch-shops/delete/(:num)',         'TouchShop::delete/$1');
+$routes->get( 'touch-shops/edit/(:num)',           'TouchShop::edit/$1');
+$routes->post('touch-shops/update/(:num)',         'TouchShop::update/$1');
+$routes->post('touch-shops/issue/(:num)',          'TouchShop::issueFromMeltJob/$1');
 
 // Part Orders (PARTORD)
 $routes->get('part-orders', 'PartOrder::index');

@@ -285,6 +285,12 @@ class Products extends BaseController
             if ($dupe) return redirect()->back()->withInput()->with('error', 'SKU "' . $sku . '" already used by another product.');
         }
 
+        $mainPartId = $data['main_part_id'] ?: null;
+        if ($mainPartId) {
+            $partExists = $this->db->query('SELECT id FROM part WHERE id = ?', [$mainPartId])->getRowArray();
+            if (!$partExists) $mainPartId = null;
+        }
+
         $productData = [
             'name' => $data['name'] ?? '',
             'short_name' => trim($data['short_name'] ?? '') ?: null,
@@ -292,7 +298,7 @@ class Products extends BaseController
             'tamil_name' => $data['tamil_name'] ?? '',
             'product_type_id' => $data['product_type_id'] ?: null,
             'body_id' => $data['body_id'] ?: null,
-            'main_part_id' => $data['main_part_id'] ?: null,
+            'main_part_id' => $mainPartId,
             'pidi' => $data['pidi'] ?? '',
         ];
 
@@ -305,9 +311,31 @@ class Products extends BaseController
             $productData['image'] = $newName;
         }
 
+        // Fetch old SKU before updating
+        $oldSku = $this->db->query('SELECT sku FROM product WHERE id = ?', [$id])->getRowArray()['sku'] ?? '';
+
         $this->db->table('product')->where('id', $id)->update($productData);
         $this->db->query('DELETE FROM product_bill_of_material WHERE product_id = ?', [$id]);
         $this->saveBom($id, $data);
+
+        // Regenerate pattern codes if SKU changed to a non-empty value
+        $newSku = trim($data['sku'] ?? '');
+        if ($newSku !== '' && $newSku !== trim((string)$oldSku)) {
+            $patterns = $this->db->query(
+                'SELECT id, is_default FROM product_pattern WHERE product_id = ? ORDER BY is_default DESC, id ASC',
+                [$id]
+            )->getResultArray();
+            $nonDefaultCount = 0;
+            foreach ($patterns as $pat) {
+                if (!empty($pat['is_default'])) {
+                    $newCode = $newSku . '-P00';
+                } else {
+                    $nonDefaultCount++;
+                    $newCode = $newSku . '-P' . str_pad($nonDefaultCount, 2, '0', STR_PAD_LEFT);
+                }
+                $this->db->table('product_pattern')->where('id', $pat['id'])->update(['pattern_code' => $newCode]);
+            }
+        }
 
         return redirect()->to('products/view/' . $id)->with('success', 'Product updated');
     }
@@ -356,22 +384,37 @@ class Products extends BaseController
 
     public function duplicate($id)
     {
-        $this->db->transStart();
-
         $src = $this->db->query('SELECT * FROM product WHERE id = ?', [$id])->getRowArray();
         if (!$src) return redirect()->to('products')->with('error', 'Not found');
+
+        // Validate FK fields exist on this server's DB
+        $productTypeId = $src['product_type_id'];
+        if ($productTypeId && !$this->db->query('SELECT id FROM product_type WHERE id = ?', [$productTypeId])->getRowArray()) $productTypeId = null;
+
+        $bodyId = $src['body_id'];
+        if ($bodyId && !$this->db->query('SELECT id FROM part WHERE id = ?', [$bodyId])->getRowArray()) $bodyId = null;
+
+        $mainPartId = $src['main_part_id'];
+        if ($mainPartId && !$this->db->query('SELECT id FROM part WHERE id = ?', [$mainPartId])->getRowArray()) $mainPartId = null;
+
+        $this->db->transStart();
 
         // Insert new product
         $this->db->table('product')->insert([
             'name' => 'Copy of ' . $src['name'],
-            'sku' => '',
+            'sku' => null,
             'tamil_name' => $src['tamil_name'],
-            'product_type_id' => $src['product_type_id'],
-            'body_id' => $src['body_id'],
-            'main_part_id' => $src['main_part_id'],
+            'product_type_id' => $productTypeId,
+            'body_id' => $bodyId,
+            'main_part_id' => $mainPartId,
             'pidi' => $src['pidi'],
         ]);
         $newId = $this->db->insertID();
+
+        if (!$newId) {
+            $this->db->transRollback();
+            return redirect()->to('products')->with('error', 'Failed to duplicate product. Please try again.');
+        }
 
         // Copy BOM
         $bomRows = $this->db->query('SELECT * FROM product_bill_of_material WHERE product_id = ?', [$id])->getResultArray();
@@ -401,10 +444,20 @@ class Products extends BaseController
 
         // Copy patterns + changes
         $patterns = $this->db->query('SELECT * FROM product_pattern WHERE product_id = ?', [$id])->getResultArray();
+        $nonDefaultCount = 0;
         foreach ($patterns as $pat) {
             $oldPatId = $pat['id'];
             unset($pat['id']);
             $pat['product_id'] = $newId;
+            // Regenerate pattern_code to avoid unique constraint violation
+            $srcSku = trim((string)($src['sku'] ?? ''));
+            $codePrefix = $srcSku !== '' ? $srcSku . '-COPY' : 'COPY-' . $newId;
+            if (!empty($pat['is_default'])) {
+                $pat['pattern_code'] = $codePrefix . '-P00';
+            } else {
+                $nonDefaultCount++;
+                $pat['pattern_code'] = $codePrefix . '-P' . str_pad($nonDefaultCount, 2, '0', STR_PAD_LEFT);
+            }
             $this->db->table('product_pattern')->insert($pat);
             $newPatId = $this->db->insertID();
 
@@ -999,6 +1052,7 @@ class Products extends BaseController
 
         foreach ($changes as $ch) {
             if ($ch['prod_changed'] && !in_array($ch['product_id'], $updatedProducts)) {
+                $oldSku = trim((string)($this->db->query('SELECT sku FROM product WHERE id = ?', [$ch['product_id']])->getRowArray()['sku'] ?? ''));
                 $this->db->table('product')->where('id', $ch['product_id'])->update([
                     'sku'        => $ch['new_sku']   ?: null,
                     'name'       => $ch['new_name'],
@@ -1006,6 +1060,25 @@ class Products extends BaseController
                     'short_name' => $ch['new_short'] ?: null,
                 ]);
                 $updatedProducts[] = $ch['product_id'];
+
+                // Regenerate pattern codes if SKU changed to a non-empty value
+                $newSku = trim((string)$ch['new_sku']);
+                if ($newSku !== '' && $newSku !== $oldSku) {
+                    $patterns = $this->db->query(
+                        'SELECT id, is_default FROM product_pattern WHERE product_id = ? ORDER BY is_default DESC, id ASC',
+                        [$ch['product_id']]
+                    )->getResultArray();
+                    $nonDefaultCount = 0;
+                    foreach ($patterns as $pat) {
+                        if (!empty($pat['is_default'])) {
+                            $newCode = $newSku . '-P00';
+                        } else {
+                            $nonDefaultCount++;
+                            $newCode = $newSku . '-P' . str_pad($nonDefaultCount, 2, '0', STR_PAD_LEFT);
+                        }
+                        $this->db->table('product_pattern')->where('id', $pat['id'])->update(['pattern_code' => $newCode]);
+                    }
+                }
             }
             if ($ch['pat_changed']) {
                 $patternNameId = null;
@@ -1088,7 +1161,7 @@ class Products extends BaseController
         $newName = $file->getRandomName();
         $file->move($uploadPath, $newName);
         $this->db->table('product')->where('id', $productId)->update(['image' => $newName]);
-        return $this->response->setJSON(['success' => true, 'url' => base_url('uploads/products/' . $newName)]);
+        return $this->response->setJSON(['success' => true, 'url' => upload_url('products/' . $newName)]);
     }
 
     public function ajaxUploadPatternImage($patternId)
@@ -1111,7 +1184,46 @@ class Products extends BaseController
         $newName = $file->getRandomName();
         $file->move($uploadPath, $newName);
         $this->db->table('product_pattern')->where('id', $patternId)->update(['image' => $newName]);
-        return $this->response->setJSON(['success' => true, 'url' => base_url('uploads/patterns/' . $newName)]);
+        return $this->response->setJSON(['success' => true, 'url' => upload_url('patterns/' . $newName)]);
+    }
+
+    /**
+     * Clean up broken image references in the database.
+     * Checks if image files actually exist on disk; sets to NULL if missing.
+     */
+    public function cleanBrokenImages()
+    {
+        $cleaned = [];
+
+        // Check product images
+        $products = $this->db->query('SELECT id, name, image FROM product WHERE image IS NOT NULL AND image != ""')->getResultArray();
+        foreach ($products as $p) {
+            $path = FCPATH . 'uploads/products/' . $p['image'];
+            if (!file_exists($path)) {
+                $this->db->table('product')->where('id', $p['id'])->update(['image' => null]);
+                $cleaned[] = 'Product #' . $p['id'] . ' (' . $p['name'] . ') — ' . $p['image'];
+            }
+        }
+
+        // Check pattern images
+        $patterns = $this->db->query('SELECT pp.id, pp.name, pp.image, p.name as product_name FROM product_pattern pp LEFT JOIN product p ON pp.product_id = p.id WHERE pp.image IS NOT NULL AND pp.image != ""')->getResultArray();
+        foreach ($patterns as $pat) {
+            $path = FCPATH . 'uploads/patterns/' . $pat['image'];
+            if (!file_exists($path)) {
+                $this->db->table('product_pattern')->where('id', $pat['id'])->update(['image' => null]);
+                $cleaned[] = 'Pattern #' . $pat['id'] . ' (' . ($pat['product_name'] ?? '') . ' / ' . $pat['name'] . ') — ' . $pat['image'];
+            }
+        }
+
+        if (empty($cleaned)) {
+            return $this->response->setJSON(['message' => 'No broken image references found.', 'cleaned' => 0]);
+        }
+
+        return $this->response->setJSON([
+            'message' => count($cleaned) . ' broken image reference(s) cleaned.',
+            'cleaned' => count($cleaned),
+            'details' => $cleaned,
+        ]);
     }
 
 }

@@ -75,7 +75,7 @@
         <div class="card-body p-0">
             <table class="table table-sm table-hover mb-0">
                 <thead class="table-light">
-                    <tr><th>SKU</th><th>Product</th><th>Type</th><th style="width:190px;">Pattern</th><th style="width:70px;"></th></tr>
+                    <tr><th style="width:40px;"></th><th>SKU</th><th>Product</th><th>Type</th><th style="width:190px;">Pattern</th><th style="width:70px;"></th></tr>
                 </thead>
                 <tbody id="resultsBody"></tbody>
             </table>
@@ -159,7 +159,11 @@ function doSearch() {
         d.products.forEach(function(p) {
             var tr = document.createElement('tr');
             tr.className = 'product-row';
-            tr.innerHTML = '<td><small class="text-muted">' + (p.sku || '') + '</small></td>'
+            var thumbHtml = p.image
+                ? '<img src="<?= upload_url('products/') ?>'+p.image+'" style="width:32px;height:32px;border-radius:5px;object-fit:cover;">'
+                : '<div style="width:32px;height:32px;border-radius:5px;background:#f0f0f0;display:flex;align-items:center;justify-content:center;font-size:14px;"><i class=\'bi bi-gem text-secondary\'></i></div>';
+            tr.innerHTML = '<td>'+thumbHtml+'</td>'
+                + '<td><small class="text-muted">' + (p.sku || '') + '</small></td>'
                 + '<td>' + p.name + '</td>'
                 + '<td><small>' + (p.type_name || '') + '</small></td>'
                 + '<td><select class="form-select form-select-sm" id="pat_' + p.id + '"><option value="">Loading...</option></select></td>'

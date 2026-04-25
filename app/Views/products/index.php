@@ -2,7 +2,10 @@
 <?php $this->section('content') ?>
 <div class="d-flex justify-content-between align-items-center mb-3">
     <h6 class="mb-0" id="productCount"><?= count($items) ?> Products</h6>
-    <a href="<?= base_url('products/create') ?>" class="btn btn-primary btn-sm"><i class="bi bi-plus"></i> Add Product</a>
+    <div class="d-flex gap-2">
+        <a href="<?= base_url('products/bulkEdit') ?>" class="btn btn-outline-success btn-sm"><i class="bi bi-file-earmark-spreadsheet"></i> Bulk Edit</a>
+        <a href="<?= base_url('products/create') ?>" class="btn btn-primary btn-sm"><i class="bi bi-plus"></i> Add Product</a>
+    </div>
 </div>
 
 <!-- Filter bar -->
@@ -104,9 +107,9 @@ function sortIcon($col, $sort, $dir) {
                     <td class="seq-col"><?= $i + 1 ?></td>
                     <td class="text-center p-1">
                         <?php if (!empty($item['image'])): ?>
-                        <img src="<?= base_url('uploads/products/' . $item['image']) ?>"
+                        <img src="<?= upload_url('products/' . $item['image']) ?>"
                              style="height:32px;width:32px;object-fit:cover;border-radius:3px;border:1px solid #ddd;cursor:pointer;"
-                             data-img="<?= base_url('uploads/products/' . $item['image']) ?>"
+                             data-img="<?= upload_url('products/' . $item['image']) ?>"
                              data-name="<?= esc($item['name']) ?>"
                              class="product-thumb-preview">
                         <?php else: ?><span class="text-muted" style="font-size:11px;">-</span><?php endif; ?>

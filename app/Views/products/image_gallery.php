@@ -45,9 +45,10 @@
             <div class="text-center" style="min-width:110px;">
                 <div class="mb-1 position-relative">
                     <?php if (!empty($product['image'])): ?>
-                    <img src="<?= base_url('uploads/products/' . $product['image']) ?>"
+                    <img src="<?= upload_url('products/' . $product['image']) ?>"
                          class="gallery-thumb preview-img"
                          data-name="<?= esc($product['name']) ?>"
+                         onerror="this.style.display='none';var p=this.parentElement.querySelector('.gallery-placeholder');if(!p){this.insertAdjacentHTML('afterend','<div class=\'gallery-placeholder d-flex align-items-center justify-content-center\' style=\'width:90px;height:90px;background:#f0f0f0;border-radius:6px;border:2px dashed #ccc;\'><i class=\'bi bi-image text-muted\' style=\'font-size:24px;\'></i></div>')}"
                          style="width:90px;height:90px;object-fit:cover;border-radius:6px;border:2px solid #ddd;cursor:pointer;">
                     <?php else: ?>
                     <div class="gallery-placeholder d-flex align-items-center justify-content-center"
@@ -80,9 +81,10 @@
                 <div class="text-center" style="min-width:90px;">
                     <div class="mb-1 position-relative">
                         <?php if (!empty($pat['image'])): ?>
-                        <img src="<?= base_url('uploads/patterns/' . $pat['image']) ?>"
+                        <img src="<?= upload_url('patterns/' . $pat['image']) ?>"
                              class="gallery-thumb preview-img"
                              data-name="<?= esc($product['name'] . ' — ' . $pat['pattern_name']) ?>"
+                             onerror="this.style.display='none';this.insertAdjacentHTML('afterend','<div class=\'gallery-placeholder d-flex align-items-center justify-content-center\' style=\'width:75px;height:75px;background:#f8f8f8;border-radius:5px;border:2px dashed #ccc;\'><i class=\'bi bi-image text-muted\' style=\'font-size:18px;\'></i></div>')"
                              style="width:75px;height:75px;object-fit:cover;border-radius:5px;border:2px solid #ccc;cursor:pointer;">
                         <?php else: ?>
                         <div class="gallery-placeholder d-flex align-items-center justify-content-center"

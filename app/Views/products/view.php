@@ -93,8 +93,8 @@
                        href="#pat_panel_<?= $pat['id'] ?>" data-pat-id="<?= $pat['id'] ?>"
                        style="font-size:12px;line-height:1.4;">
                         <span class="text-muted me-1" style="font-size:10px;">#<?= $pi + 1 ?></span>
-                        <?php $sideImgSrc = !empty($pat['image']) ? base_url('uploads/patterns/' . $pat['image']) : (!empty($product['image']) ? base_url('uploads/products/' . $product['image']) : null); ?>
-                        <?php if ($sideImgSrc): ?><img src="<?= $sideImgSrc ?>" style="height:20px;width:20px;object-fit:cover;border-radius:3px;vertical-align:middle;margin-right:3px;"><?php endif; ?>
+                        <?php $sideImgSrc = !empty($pat['image']) ? upload_url('patterns/' . $pat['image']) : (!empty($product['image']) ? upload_url('products/' . $product['image']) : null); ?>
+                        <?php if ($sideImgSrc): ?><img src="<?= $sideImgSrc ?>" onerror="this.style.display='none'" style="height:20px;width:20px;object-fit:cover;border-radius:3px;vertical-align:middle;margin-right:3px;"><?php endif; ?>
                         <strong><?= esc($pat['name']) ?></strong>
                         <?php if (!empty($pat['pattern_code'])): ?><span class="badge bg-secondary ms-1" style="font-size:9px;"><?= esc($pat['pattern_code']) ?></span><?php endif; ?>
                         <?php if ($pat['is_default']): ?> <span class="badge bg-primary" style="font-size:9px;">DEF</span><?php endif; ?>
@@ -117,11 +117,12 @@
                 <div class="d-flex justify-content-between align-items-start mb-3">
                     <div class="d-flex align-items-center gap-2">
                         <?php
-                        $patImgSrc = !empty($pat['image']) ? base_url('uploads/patterns/' . $pat['image']) : (!empty($product['image']) ? base_url('uploads/products/' . $product['image']) : null);
+                        $patImgSrc = !empty($pat['image']) ? upload_url('patterns/' . $pat['image']) : (!empty($product['image']) ? upload_url('products/' . $product['image']) : null);
                         $patImgTitle = !empty($pat['image']) ? 'Pattern image' : 'Product default image';
                         ?>
                         <?php if ($patImgSrc): ?>
                         <img src="<?= $patImgSrc ?>" alt="" title="<?= $patImgTitle ?>"
+                             onerror="this.onerror=null;this.style.display='none';this.parentElement.insertAdjacentHTML('afterbegin','<span class=\'d-inline-flex align-items-center justify-content-center text-muted\' style=\'height:48px;width:48px;border-radius:5px;border:1px solid #ddd;background:#f0f0f0;\'><i class=\'bi bi-image\' style=\'font-size:20px;\'></i></span>')"
                              style="height:48px;width:48px;object-fit:cover;border-radius:5px;border:1px solid #ddd;cursor:pointer;"
                              data-img="<?= $patImgSrc ?>" data-name="<?= esc($pat['name']) ?> (<?= $patImgTitle ?>)"
                              class="pattern-thumb-preview">
@@ -164,9 +165,9 @@
                                 <div class="mb-2"><label class="form-label">Short Label Name <small class="text-muted">&lt;20 chars</small></label><input type="text" class="form-control" name="short_name" maxlength="60" value="<?= esc($pat['short_name'] ?? '') ?>" placeholder="e.g. 1+1CUT"></div>
                                 <div class="mb-2">
                                     <label class="form-label">Image</label>
-                                    <?php $modalImgSrc = !empty($pat['image']) ? base_url('uploads/patterns/' . $pat['image']) : (!empty($product['image']) ? base_url('uploads/products/' . $product['image']) : null); ?>
+                                    <?php $modalImgSrc = !empty($pat['image']) ? upload_url('patterns/' . $pat['image']) : (!empty($product['image']) ? upload_url('products/' . $product['image']) : null); ?>
                                     <?php if ($modalImgSrc): ?>
-                                    <div class="mb-1"><img src="<?= $modalImgSrc ?>" style="height:60px;border-radius:4px;border:1px solid #ddd;">
+                                    <div class="mb-1"><img src="<?= $modalImgSrc ?>" onerror="this.style.display='none'" style="height:60px;border-radius:4px;border:1px solid #ddd;">
                                     <label class="ms-2 text-danger" style="font-size:12px;"><input type="checkbox" name="remove_image" value="1"> Remove image</label></div>
                                     <?php endif; ?>
                                     <input type="file" class="form-control form-control-sm" name="pattern_image" accept="image/*">

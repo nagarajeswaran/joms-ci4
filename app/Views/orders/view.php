@@ -3,7 +3,7 @@
 <?php
 $statusColors = ['draft'=>'secondary','confirmed'=>'primary','production'=>'warning','completed'=>'success'];
 $sc = $statusColors[$order['status']] ?? 'secondary';
-$imgBase = base_url('uploads/products/');
+$imgBase = upload_url('products/');
 ?>
 
 <!-- Order Header -->
@@ -38,6 +38,7 @@ $imgBase = base_url('uploads/products/');
                     <a href="<?= base_url('orders/partRequirements/' . $order['id']) ?>" class="btn btn-success btn-sm"><i class="bi bi-list-check"></i> Part Requirements</a>
                     <a href="<?= base_url('orders/orderSheet/' . $order['id']) ?>" class="btn btn-info btn-sm"><i class="bi bi-file-earmark-text"></i> Order Sheet</a>
                     <a href="<?= base_url('orders/touchAnalysis/' . $order['id']) ?>" class="btn btn-outline-warning btn-sm"><i class="bi bi-droplet"></i> Touch Analysis</a>
+                    <button type="button" id="touchToggleBtn" class="btn btn-outline-warning btn-sm" onclick="toggleTouchMode()"><i class="bi bi-droplet"></i> Show Touch %</button>
                     <?php if ($order['status'] === 'confirmed'): ?>
                     <a href="<?= base_url('orders/updateStatus/' . $order['id'] . '/production') ?>" class="btn btn-warning btn-sm" onclick="return confirm('Move to Production?')"><i class="bi bi-arrow-right"></i> Production</a>
                     <?php elseif ($order['status'] === 'production'): ?>
@@ -182,7 +183,7 @@ foreach ($items as $_itm) {
                     </tr>
                 </thead>
                 <tbody>
-                    <tr>
+                    <tr class="qty-row">
                         <?php foreach ($vars as $v): ?>
                         <td class="text-center p-1">
                             <?php if ($canEdit): ?>
@@ -197,6 +198,13 @@ foreach ($items as $_itm) {
                                 <?= ($item['qty_map'][$v['id']] ?? 0) > 0 ? (int)$item['qty_map'][$v['id']] : '—' ?>
                             </span>
                             <?php endif; ?>
+                        </td>
+                        <?php endforeach; ?>
+                    </tr>
+                    <tr class="touch-row d-none" style="background:#fff8e1;">
+                        <?php foreach ($vars as $v): ?>
+                        <td class="text-center p-1">
+                            <span class="var-touch-value fw-bold" style="color:#e65c00;" data-vid="<?= $v['id'] ?>">—</span>
                         </td>
                         <?php endforeach; ?>
                     </tr>
@@ -282,6 +290,47 @@ var _orderId    = <?= (int)$order['id'] ?>;
 var _stamps     = <?= json_encode($stamps) ?>;
 var _selectedProducts = {};
 var _newFormWeightMaps = {};  // productId -> weight_map for new (unsaved) product forms
+var _vTouchMap  = <?= json_encode($variationTouchMap ?? []) ?>;
+var _touchMode  = false;
+
+function toggleTouchMode() {
+    if (Object.keys(_vTouchMap).length === 0) {
+        alert('No touch values found. Please save touch values on the Touch Analysis page first.');
+        return;
+    }
+    _touchMode = !_touchMode;
+    var btn = document.getElementById('touchToggleBtn');
+
+    document.querySelectorAll('.order-item-card').forEach(function(card) {
+        var itemId = card.dataset.itemId;
+        var touchData = _vTouchMap[itemId] || {};
+
+        if (_touchMode) {
+            card.querySelectorAll('.var-touch-value').forEach(function(span) {
+                var vid = span.dataset.vid;
+                var val = touchData[vid];
+                span.textContent = (val !== undefined && val > 0) ? val.toFixed(2) + '%' : '—';
+            });
+        }
+
+        card.querySelectorAll('.qty-row').forEach(function(tr) {
+            tr.classList.toggle('d-none', _touchMode);
+        });
+        card.querySelectorAll('.touch-row').forEach(function(tr) {
+            tr.classList.toggle('d-none', !_touchMode);
+        });
+    });
+
+    if (_touchMode) {
+        btn.innerHTML = '<i class="bi bi-droplet-fill"></i> Show Qty';
+        btn.classList.remove('btn-outline-warning');
+        btn.classList.add('btn-warning');
+    } else {
+        btn.innerHTML = '<i class="bi bi-droplet"></i> Show Touch %';
+        btn.classList.remove('btn-warning');
+        btn.classList.add('btn-outline-warning');
+    }
+}
 
 function post(url, data) {
     var body = new URLSearchParams(data);
