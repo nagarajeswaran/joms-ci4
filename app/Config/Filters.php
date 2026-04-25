@@ -2,6 +2,8 @@
 
 namespace Config;
 
+use App\Filters\SessionInit;
+use Config\RoleAccess;
 use CodeIgniter\Config\Filters as BaseFilters;
 use CodeIgniter\Filters\Cors;
 use CodeIgniter\Filters\CSRF;
@@ -34,6 +36,10 @@ class Filters extends BaseFilters
         'forcehttps'    => ForceHTTPS::class,
         'pagecache'     => PageCache::class,
         'performance'   => PerformanceMetrics::class,
+        'sessioninit'   => SessionInit::class,
+        'auth'          => \App\Filters\Auth::class,
+        'role'          => \App\Filters\Role::class,
+        'staffauth'     => \App\Filters\StaffAuth::class,
     ];
 
     /**
@@ -52,10 +58,8 @@ class Filters extends BaseFilters
     public array $required = [
         'before' => [
             'forcehttps', // Force Global Secure Requests
-            'pagecache',  // Web Page Caching
         ],
         'after' => [
-            'pagecache',   // Web Page Caching
             'performance', // Performance Metrics
             'toolbar',     // Debug Toolbar
         ],
@@ -72,6 +76,7 @@ class Filters extends BaseFilters
      */
     public array $globals = [
         'before' => [
+            'sessioninit',
             // 'honeypot',
             // 'csrf',
             // 'invalidchars',
@@ -107,4 +112,36 @@ class Filters extends BaseFilters
      * @var array<string, array<string, list<string>>>
      */
     public array $filters = [];
+
+    public function __construct()
+    {
+        parent::__construct();
+
+        $this->filters = [
+            'auth' => [
+                'before' => RoleAccess::getProtectedRoutePatterns(),
+            ],
+            'role:admin,masters' => [
+                'before' => RoleAccess::ROUTE_ROLE_PATTERNS['admin,masters'],
+            ],
+            'role:admin,products' => [
+                'before' => RoleAccess::ROUTE_ROLE_PATTERNS['admin,products'],
+            ],
+            'role:admin,inventory' => [
+                'before' => RoleAccess::ROUTE_ROLE_PATTERNS['admin,inventory'],
+            ],
+            'role:admin,manufacturing' => [
+                'before' => RoleAccess::ROUTE_ROLE_PATTERNS['admin,manufacturing'],
+            ],
+            'role:admin,raw-material-stock' => [
+                'before' => RoleAccess::ROUTE_ROLE_PATTERNS['admin,raw-material-stock'],
+            ],
+            'role:admin,mfg-masters' => [
+                'before' => RoleAccess::ROUTE_ROLE_PATTERNS['admin,mfg-masters'],
+            ],
+            'role:admin' => [
+                'before' => RoleAccess::ROUTE_ROLE_PATTERNS['admin'],
+            ],
+        ];
+    }
 }

@@ -244,6 +244,180 @@ class Orders extends BaseController
         return $weightMap;
     }
 
+    // Returns [order_item_id => [variation_id => avg_touch%]]
+    // avg_touch = (Σ group_weight × group_touch%) / total_weight × 100  (1 pc basis)
+    private function _computeVariationTouchMap(int $orderId, array $savedTouch): array
+    {
+        if (empty($savedTouch)) return [];
+
+        $kanniMap = [];
+        $setup = $this->db->query('SELECT * FROM order_main_part_setup WHERE order_id = ?', [$orderId])->getResultArray();
+        foreach ($setup as $s) {
+            $kanniMap[$s['part_id']] = [
+                'kanni_per_inch'   => (float)$s['kanni_per_inch'],
+                'weight_per_kanni' => (float)$s['weight_per_kanni'],
+            ];
+        }
+
+        $rawItems = $this->db->query('
+            SELECT oi.id, oi.product_id, oi.pattern_id,
+                   p.main_part_id, pt.variations as pt_variations,
+                   pt.multiplication_factor, b.clasp_size
+            FROM order_items oi
+            JOIN product p ON p.id = oi.product_id
+            LEFT JOIN product_type pt ON pt.id = p.product_type_id
+            LEFT JOIN body b ON b.id = p.body_id
+            WHERE oi.order_id = ?
+            ORDER BY oi.sort_order, oi.id
+        ', [$orderId])->getResultArray();
+
+        $result = [];
+
+        foreach ($rawItems as $item) {
+            $itemId    = (int)$item['id'];
+            $factor    = (float)($item['multiplication_factor'] ?? 1);
+            $claspSize = (float)($item['clasp_size'] ?? 0);
+            $mainId    = (int)($item['main_part_id'] ?? 0);
+
+            $ptVarIds = [];
+            if (!empty($item['pt_variations'])) {
+                $ptVarIds = array_values(array_filter(array_map('trim', explode(',', $item['pt_variations']))));
+            }
+            if (empty($ptVarIds)) continue;
+
+            $ph   = implode(',', array_fill(0, count($ptVarIds), '?'));
+            $vars = $this->db->query(
+                "SELECT id, group_name, name, size FROM variation WHERE id IN ($ph) ORDER BY group_name, size+0",
+                $ptVarIds
+            )->getResultArray();
+            if (empty($vars)) continue;
+
+            $bom = $this->_getEffectiveBom($item['product_id'], $item['pattern_id']);
+
+            // Load podi weights from BOM rows
+            $podiWeights = [];
+            $podiIdsInBom = array_values(array_unique(array_filter(array_column($bom, 'podi_id'))));
+            if ($podiIdsInBom) {
+                $ph3   = implode(',', array_fill(0, count($podiIdsInBom), '?'));
+                $podiRows = $this->db->query("SELECT id, weight FROM podi WHERE id IN ($ph3)", $podiIdsInBom)->getResultArray();
+                foreach ($podiRows as $pr) $podiWeights[$pr['id']] = (float)$pr['weight'];
+            }
+
+            $bomPartIds = array_unique(array_filter(array_column($bom, 'part_id')));
+            if ($mainId) $bomPartIds[] = $mainId;
+            $bomPartIds = array_values(array_unique($bomPartIds));
+
+            $partGroupMap = [];
+            if ($bomPartIds) {
+                $ph2   = implode(',', array_fill(0, count($bomPartIds), '?'));
+                $pRows = $this->db->query("
+                    SELECT pa.id, pa.weight, dg.name as group_name
+                    FROM part pa
+                    LEFT JOIN department d ON d.id = pa.department_id
+                    LEFT JOIN department_group dg ON dg.id = d.department_group_id
+                    WHERE pa.id IN ($ph2)
+                ", array_values($bomPartIds))->getResultArray();
+                foreach ($pRows as $pr) {
+                    $partGroupMap[$pr['id']] = [
+                        'weight'     => (float)$pr['weight'],
+                        'group_name' => $pr['group_name'] ?? 'Unassigned',
+                    ];
+                }
+            }
+
+            $kanniPerInch   = isset($kanniMap[$mainId]) ? $kanniMap[$mainId]['kanni_per_inch']   : 0;
+            $weightPerKanni = isset($kanniMap[$mainId]) ? $kanniMap[$mainId]['weight_per_kanni']  : 0;
+            if ($kanniPerInch <= 0 && $mainId) {
+                $mp = $this->db->query('SELECT pcs FROM part WHERE id = ?', [$mainId])->getRowArray();
+                if ($mp) $kanniPerInch = (float)($mp['pcs'] ?? 0);
+            }
+            if ($kanniPerInch <= 0) $kanniPerInch = 12.0;
+
+            $cbomRows = $this->db->query(
+                'SELECT * FROM product_customize_bill_of_material WHERE product_id = ?',
+                [$item['product_id']]
+            )->getResultArray();
+            $cbomQtyMap = [];
+            foreach ($cbomRows as $cbom) {
+                $rows = $this->db->query(
+                    'SELECT variation_id, part_quantity FROM product_customize_bill_of_material_quantity WHERE product_customize_bill_of_material_id = ?',
+                    [$cbom['id']]
+                )->getResultArray();
+                foreach ($rows as $r) {
+                    $cbomQtyMap[$cbom['id']][$r['variation_id']] = (float)$r['part_quantity'];
+                }
+            }
+
+            $result[$itemId] = [];
+
+            foreach ($vars as $v) {
+                $vid       = (int)$v['id'];
+                $actualLen = max(0, (float)$v['size'] - $claspSize);
+                $groupWt   = [];
+
+                foreach ($bom as $bomRow) {
+                    $partId  = (int)$bomRow['part_id'];
+                    $partPcs = (float)($bomRow['part_pcs'] ?? 0);
+                    $scale   = $bomRow['scale'] ?? '';
+                    $vgRaw   = trim($bomRow['variation_group'] ?? '');
+                    $vgList  = $vgRaw !== '' ? array_map('trim', explode(',', $vgRaw)) : [];
+
+                    $applies = empty($vgList) || in_array($v['group_name'], $vgList);
+                    if (!$applies) continue;
+
+                    if ($partId === $mainId && $kanniPerInch > 0 && $weightPerKanni > 0) continue;
+
+                    $partInfo = $partGroupMap[$partId] ?? null;
+                    if (!$partInfo) continue;
+
+                    $contrib = 0;
+                    if ($scale === 'Per Inch')  $contrib = $actualLen * $factor * $partPcs * $partInfo['weight'];
+                    if ($scale === 'Per Pair')  $contrib = $partPcs * $partInfo['weight'];
+                    if ($scale === 'Per Kanni') $contrib = $actualLen * $factor * $kanniPerInch * $partPcs * $partInfo['weight'];
+
+                    $gn = $partInfo['group_name'];
+                    $groupWt[$gn] = ($groupWt[$gn] ?? 0) + $contrib;
+
+                    // Podi contribution for this BOM row (same applicability as part)
+                    $podiId  = $bomRow['podi_id'] ?? null;
+                    $podiPcs = (float)($bomRow['podi_pcs'] ?? 0);
+                    if ($podiId && $podiPcs > 0 && isset($podiWeights[$podiId])) {
+                        $groupWt['Podi'] = ($groupWt['Podi'] ?? 0) + $podiPcs * $podiWeights[$podiId];
+                    }
+                }
+
+                if ($mainId && $kanniPerInch > 0 && $weightPerKanni > 0) {
+                    $mainContrib = $actualLen * $factor * $kanniPerInch * $weightPerKanni;
+                    $mainGn      = $partGroupMap[$mainId]['group_name'] ?? 'Unassigned';
+                    $groupWt[$mainGn] = ($groupWt[$mainGn] ?? 0) + $mainContrib;
+                }
+
+                foreach ($cbomRows as $cbom) {
+                    $partId   = (int)$cbom['part_id'];
+                    $partInfo = $partGroupMap[$partId] ?? null;
+                    if (!$partInfo) continue;
+                    $qty = $cbomQtyMap[$cbom['id']][$vid] ?? 0;
+                    if ($qty <= 0) continue;
+                    $gn = $partInfo['group_name'];
+                    $groupWt[$gn] = ($groupWt[$gn] ?? 0) + $qty * $partInfo['weight'];
+                }
+
+                $totalWt = array_sum($groupWt);
+                if ($totalWt <= 0) {
+                    $result[$itemId][$vid] = 0.0;
+                    continue;
+                }
+                $pure = 0;
+                foreach ($groupWt as $gn => $wt) {
+                    $pure += $wt * (float)($savedTouch[$gn] ?? 0) / 100;
+                }
+                $result[$itemId][$vid] = round($pure / $totalWt * 100, 2);
+            }
+        }
+
+        return $result;
+    }
+
     private function _calculatePartRequirements($orderId, $setupOverride = [], $filterItemId = null)
     {
         $kanniMap = [];
@@ -624,13 +798,20 @@ class Orders extends BaseController
             $prevTypeId = $item['product_type_id'];
         }
 
+        // Load variation touch map if touch values are saved
+        $savedTouch = [];
+        $touchRows  = $this->db->query('SELECT group_name, touch_value FROM order_touch WHERE order_id = ?', [$id])->getResultArray();
+        foreach ($touchRows as $t) $savedTouch[$t['group_name']] = (float)$t['touch_value'];
+        $variationTouchMap = $this->_computeVariationTouchMap((int)$id, $savedTouch);
+
         return view('orders/view', [
-            'title'        => $order['title'],
-            'order'        => $order,
-            'items'        => $items,
-            'canEdit'      => in_array($order['status'], ['draft', 'confirmed']),
-            'stamps'       => $this->db->query('SELECT id, name FROM stamp ORDER BY name')->getResultArray(),
-            'productTypes' => $this->db->query('SELECT id, name FROM product_type ORDER BY name')->getResultArray(),
+            'title'             => $order['title'],
+            'order'             => $order,
+            'items'             => $items,
+            'canEdit'           => in_array($order['status'], ['draft', 'confirmed']),
+            'stamps'            => $this->db->query('SELECT id, name FROM stamp ORDER BY name')->getResultArray(),
+            'productTypes'      => $this->db->query('SELECT id, name FROM product_type ORDER BY name')->getResultArray(),
+            'variationTouchMap' => $variationTouchMap,
         ]);
     }
 
@@ -1478,7 +1659,7 @@ class Orders extends BaseController
             }
 
             $aggregated[$mpId]['sum_length']  = $totalLength;
-            $aggregated[$mpId]['part_pcs']    = ($aggregated[$mpId]['part_pcs'] ?? 0) + $totalLength * $kanniPerInch;
+            $aggregated[$mpId]['part_pcs']    = $totalLength * $kanniPerInch;
         }
 
         $partIds = array_keys($aggregated);
@@ -1567,7 +1748,7 @@ class Orders extends BaseController
             }
 
             $aggregated[$mpId]['sum_length'] = $totalLength;
-            $aggregated[$mpId]['part_pcs']   = ($aggregated[$mpId]['part_pcs'] ?? 0) + $totalLength * $kanniPerInch;
+            $aggregated[$mpId]['part_pcs']   = $totalLength * $kanniPerInch;
         }
 
         $partIds = array_keys($aggregated);
@@ -2599,7 +2780,7 @@ class Orders extends BaseController
                 }
             }
             $aggregated[$mpId]['sum_length']  = $totalLength;
-            $aggregated[$mpId]['part_pcs']    = ($aggregated[$mpId]['part_pcs'] ?? 0) + $totalLength * $kanniPerInch;
+            $aggregated[$mpId]['part_pcs']    = $totalLength * $kanniPerInch;
         }
         // --- end inject + recompute ---
 

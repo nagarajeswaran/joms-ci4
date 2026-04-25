@@ -15,6 +15,7 @@
             background: #2c3e50; color: white; padding-top: 0;
             overflow-y: auto; z-index: 1000;
             transition: transform 0.25s ease;
+            display: flex; flex-direction: column;
         }
         .sidebar.collapsed { transform: translateX(-220px); }
         .sidebar-header {
@@ -47,6 +48,18 @@
         /* Main content */
         .main-content { margin-left: 220px; padding: 20px; transition: margin-left 0.25s ease; }
         body.sidebar-collapsed .main-content { margin-left: 0; }
+        .sidebar-backdrop {
+            position: fixed; inset: 0; background: rgba(15, 23, 42, 0.45);
+            z-index: 998; display: none;
+        }
+        body.sidebar-open-mobile .sidebar-backdrop { display: block; }
+        @media (max-width: 991.98px) {
+            .sidebar { transform: translateX(-220px); box-shadow: 0 8px 24px rgba(0,0,0,0.2); }
+            .main-content { margin-left: 0; }
+            .sidebar-toggle { display: block; }
+            body.sidebar-open-mobile .sidebar { transform: translateX(0); }
+            body.sidebar-collapsed .sidebar-toggle { display: block; }
+        }
 
         .top-bar {
             background: white; padding: 12px 20px; margin: -20px -20px 20px;
@@ -65,10 +78,121 @@
     <?= $this->renderSection('styles') ?>
 </head>
 <body>
+    <?php
+        use Config\RoleAccess;
+
+        $currentUri = uri_string();
+        $currentUser = session()->get('user') ?? [];
+        $normalizedRole = RoleAccess::normalizeRole((string) ($currentUser['role'] ?? 'user'));
+        $userModules    = (array) ($currentUser['modules'] ?? []);
+        $canViewModule = static function (array $module, string $role, array $modules): bool {
+            return RoleAccess::canViewSidebarModule($role, $module['title'] ?? '', $modules);
+        };
+        $sidebarModules = [
+            [
+                'title' => 'Dashboard',
+                'items' => [
+                    [
+                        'label' => 'Admin Dashboard',
+                        'url' => base_url('/'),
+                        'icon' => 'bi-speedometer2',
+                        'match' => static fn(string $uri): bool => $uri === '',
+                    ],
+                ],
+            ],
+            [
+                'title' => 'Administration',
+                'items' => [
+                    [
+                        'label' => 'Users',
+                        'url' => base_url('users'),
+                        'icon' => 'bi-people',
+                        'match' => static fn(string $uri): bool => $uri === 'users',
+                    ],
+                    [
+                        'label' => 'Create User',
+                        'url' => base_url('users/create'),
+                        'icon' => 'bi-person-plus',
+                        'match' => static fn(string $uri): bool => $uri === 'users/create',
+                        'indent' => true,
+                    ],
+                ],
+            ],
+            [
+                'title' => 'Masters',
+                'items' => [
+                    ['label' => 'Product Types', 'url' => base_url('product-types'), 'icon' => 'bi-grid', 'match' => static fn(string $uri): bool => $uri === 'product-types'],
+                    ['label' => 'Bodies', 'url' => base_url('bodies'), 'icon' => 'bi-box', 'match' => static fn(string $uri): bool => $uri === 'bodies'],
+                    ['label' => 'Variations', 'url' => base_url('variations'), 'icon' => 'bi-arrows-angle-expand', 'match' => static fn(string $uri): bool => $uri === 'variations'],
+                    ['label' => 'Departments', 'url' => base_url('departments'), 'icon' => 'bi-building', 'match' => static fn(string $uri): bool => $uri === 'departments'],
+                    ['label' => 'Parts', 'url' => base_url('parts'), 'icon' => 'bi-puzzle', 'match' => static fn(string $uri): bool => $uri === 'parts'],
+                    ['label' => 'Podi', 'url' => base_url('podies'), 'icon' => 'bi-circle', 'match' => static fn(string $uri): bool => $uri === 'podies'],
+                    ['label' => 'Clients', 'url' => base_url('clients'), 'icon' => 'bi-people', 'match' => static fn(string $uri): bool => $uri === 'clients'],
+                    ['label' => 'Stamps', 'url' => base_url('stamps'), 'icon' => 'bi-bookmark', 'match' => static fn(string $uri): bool => $uri === 'stamps'],
+                    ['label' => 'Pattern Names', 'url' => base_url('pattern-names'), 'icon' => 'bi-tag', 'match' => static fn(string $uri): bool => str_starts_with($uri, 'pattern-names')],
+                    ['label' => 'BOM Templates', 'url' => base_url('templates'), 'icon' => 'bi-file-earmark-text', 'match' => static fn(string $uri): bool => str_starts_with($uri, 'templates')],
+                ],
+            ],
+            [
+                'title' => 'Products',
+                'items' => [
+                    ['label' => 'Products', 'url' => base_url('products'), 'icon' => 'bi-bag', 'match' => static fn(string $uri): bool => str_starts_with($uri, 'products'), 'indent' => false],
+                    ['label' => 'Image Gallery', 'url' => base_url('products/imageGallery'), 'icon' => 'bi-images', 'match' => static fn(string $uri): bool => $uri === 'products/imageGallery', 'indent' => true],
+                    ['label' => 'Bulk Update', 'url' => base_url('products/bulkEdit'), 'icon' => 'bi-file-earmark-spreadsheet', 'match' => static fn(string $uri): bool => str_starts_with($uri, 'products/bulk'), 'indent' => true],
+                ],
+            ],
+            [
+                'title' => 'Product Inventory',
+                'items' => [
+                    ['label' => 'Stock', 'url' => base_url('stock'), 'icon' => 'bi-boxes', 'match' => static fn(string $uri): bool => str_starts_with($uri, 'stock')],
+                    ['label' => 'Add Stock', 'url' => base_url('stock/entry'), 'icon' => 'bi-plus-circle', 'match' => static fn(string $uri): bool => $uri === 'stock/entry'],
+                    ['label' => 'Scan & Sell', 'url' => base_url('stock/scan'), 'icon' => 'bi-qr-code-scan', 'match' => static fn(string $uri): bool => $uri === 'stock/scan'],
+                    ['label' => 'Transfer', 'url' => base_url('stock/transfer'), 'icon' => 'bi-arrow-left-right', 'match' => static fn(string $uri): bool => $uri === 'stock/transfer'],
+                    ['label' => 'Low Stock', 'url' => base_url('stock/low-stock'), 'icon' => 'bi-exclamation-triangle', 'match' => static fn(string $uri): bool => $uri === 'stock/low-stock'],
+                    ['label' => 'Audit Log', 'url' => base_url('stock/audit-log'), 'icon' => 'bi-journal-text', 'match' => static fn(string $uri): bool => $uri === 'stock/audit-log'],
+                    ['label' => 'Generate Labels', 'url' => base_url('stock/label-generate'), 'icon' => 'bi-printer', 'match' => static fn(string $uri): bool => $uri === 'stock/label-generate'],
+                    ['label' => 'QR Registry', 'url' => base_url('stock/qr-registry'), 'icon' => 'bi-upc-scan', 'match' => static fn(string $uri): bool => $uri === 'stock/qr-registry'],
+                ],
+            ],
+            [
+                'title' => 'Manufacturing',
+                'items' => [
+                    ['label' => 'Orders', 'url' => base_url('orders'), 'icon' => 'bi-clipboard-check', 'match' => static fn(string $uri): bool => str_starts_with($uri, 'orders')],
+                    ['label' => 'Karigar', 'url' => base_url('karigar'), 'icon' => 'bi-person-badge', 'match' => static fn(string $uri): bool => str_starts_with($uri, 'karigar') && !str_starts_with($uri, 'karigar-ledger')],
+                    ['label' => 'Melt Jobs', 'url' => base_url('melt-jobs'), 'icon' => 'bi-fire', 'match' => static fn(string $uri): bool => str_starts_with($uri, 'melt-jobs')],
+                    ['label' => 'Touch Ledger', 'url' => base_url('touch-shops'), 'icon' => 'bi-flask', 'match' => static fn(string $uri): bool => str_starts_with($uri, 'touch-shops')],
+                    ['label' => 'Part Orders', 'url' => base_url('part-orders'), 'icon' => 'bi-clipboard2-check', 'match' => static fn(string $uri): bool => str_starts_with($uri, 'part-orders')],
+                    ['label' => 'Pending Receive Entry', 'url' => base_url('pending-receive-entry'), 'icon' => 'bi-inboxes', 'match' => static fn(string $uri): bool => str_starts_with($uri, 'pending-receive-entry')],
+                    ['label' => 'Assembly Work', 'url' => base_url('assembly-work'), 'icon' => 'bi-tools', 'match' => static fn(string $uri): bool => str_starts_with($uri, 'assembly-work')],
+                    ['label' => 'Karigar Ledger', 'url' => base_url('karigar-ledger'), 'icon' => 'bi-journal-bookmark', 'match' => static fn(string $uri): bool => str_starts_with($uri, 'karigar-ledger')],
+                ],
+            ],
+            [
+                'title' => 'Raw Material Stock',
+                'items' => [
+                    ['label' => 'Kacha', 'url' => base_url('kacha'), 'icon' => 'bi-droplet', 'match' => static fn(string $uri): bool => str_starts_with($uri, 'kacha')],
+                    ['label' => 'Part Batches', 'url' => base_url('part-stock'), 'icon' => 'bi-boxes', 'match' => static fn(string $uri): bool => str_starts_with($uri, 'part-stock')],
+                    ['label' => 'Gatti Stock', 'url' => base_url('gatti-stock'), 'icon' => 'bi-bar-chart-steps', 'match' => static fn(string $uri): bool => $uri === 'gatti-stock'],
+                    ['label' => 'RM Batches', 'url' => base_url('raw-material-batches'), 'icon' => 'bi-stack', 'match' => static fn(string $uri): bool => str_starts_with($uri, 'raw-material-batches')],
+                    ['label' => 'Raw Materials', 'url' => base_url('raw-materials'), 'icon' => 'bi-collection', 'match' => static fn(string $uri): bool => str_starts_with($uri, 'raw-materials')],
+                    ['label' => 'Byproducts', 'url' => base_url('byproducts'), 'icon' => 'bi-recycle', 'match' => static fn(string $uri): bool => $uri === 'byproducts'],
+                ],
+            ],
+            [
+                'title' => 'Mfg Masters',
+                'items' => [
+                    ['label' => 'Raw Material Types', 'url' => base_url('raw-material-types'), 'icon' => 'bi-list-ul', 'match' => static fn(string $uri): bool => str_starts_with($uri, 'raw-material-types')],
+                    ['label' => 'Byproduct Types', 'url' => base_url('byproduct-types'), 'icon' => 'bi-list-ul', 'match' => static fn(string $uri): bool => str_starts_with($uri, 'byproduct-types')],
+                    ['label' => 'Finished Goods', 'url' => base_url('finished-goods'), 'icon' => 'bi-gem', 'match' => static fn(string $uri): bool => str_starts_with($uri, 'finished-goods')],
+                ],
+            ],
+        ];
+    ?>
     <!-- Toggle button shown when sidebar is hidden -->
     <button class="sidebar-toggle" id="sidebarToggle" title="Open menu">
         <i class="bi bi-list"></i>
     </button>
+    <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
 
     <div class="sidebar" id="sidebar">
         <div class="sidebar-header">
@@ -77,45 +201,39 @@
                 <i class="bi bi-x-lg"></i>
             </button>
         </div>
-        <div class="nav-section">Master Data</div>
-        <a href="<?= base_url('product-types') ?>" class="<?= uri_string() == 'product-types' ? 'active' : '' ?>"><i class="bi bi-grid"></i> Product Types</a>
-        <a href="<?= base_url('bodies') ?>" class="<?= uri_string() == 'bodies' ? 'active' : '' ?>"><i class="bi bi-box"></i> Bodies</a>
-        <a href="<?= base_url('variations') ?>" class="<?= uri_string() == 'variations' ? 'active' : '' ?>"><i class="bi bi-arrows-angle-expand"></i> Variations</a>
-        <a href="<?= base_url('departments') ?>" class="<?= uri_string() == 'departments' ? 'active' : '' ?>"><i class="bi bi-building"></i> Departments</a>
-        <a href="<?= base_url('parts') ?>" class="<?= uri_string() == 'parts' ? 'active' : '' ?>"><i class="bi bi-puzzle"></i> Parts</a>
-        <a href="<?= base_url('podies') ?>" class="<?= uri_string() == 'podies' ? 'active' : '' ?>"><i class="bi bi-circle"></i> Podi</a>
-        <a href="<?= base_url('clients') ?>" class="<?= uri_string() == 'clients' ? 'active' : '' ?>"><i class="bi bi-people"></i> Clients</a>
-        <a href="<?= base_url('stamps') ?>" class="<?= uri_string() == 'stamps' ? 'active' : '' ?>"><i class="bi bi-bookmark"></i> Stamps</a>
-        <a href="<?= base_url('pattern-names') ?>" class="<?= str_starts_with(uri_string(), 'pattern-names') ? 'active' : '' ?>"><i class="bi bi-tag"></i> Pattern Names</a>
-        <a href="<?= base_url('templates') ?>" class="<?= str_starts_with(uri_string(), 'templates') ? 'active' : '' ?>"><i class="bi bi-file-earmark-text"></i> BOM Templates</a>
-        <div class="nav-section">Production</div>
-        <a href="<?= base_url('products') ?>" class="<?= str_starts_with(uri_string(), 'products') ? 'active' : '' ?>"><i class="bi bi-bag"></i> Products</a>
-        <a href="<?= base_url('products/imageGallery') ?>" class="<?= uri_string() == 'products/imageGallery' ? 'active' : '' ?>" style="padding-left:28px;font-size:12px;"><i class="bi bi-images"></i> Image Gallery</a>
-        <a href="<?= base_url('products/bulkEdit') ?>" class="<?= str_starts_with(uri_string(), 'products/bulk') ? 'active' : '' ?>" style="padding-left:28px;font-size:12px;"><i class="bi bi-file-earmark-spreadsheet"></i> Bulk Update</a>
-        <a href="<?= base_url('orders') ?>" class="<?= str_starts_with(uri_string(), 'orders') ? 'active' : '' ?>"><i class="bi bi-clipboard-check"></i> Orders</a>
-        <div class="nav-section">Inventory</div>
-        <a href="<?= base_url('stock') ?>" class="<?= str_starts_with(uri_string(), 'stock') ? 'active' : '' ?>"><i class="bi bi-boxes"></i> Stock</a>
-        <a href="<?= base_url('stock/entry') ?>" class="<?= uri_string() == 'stock/entry' ? 'active' : '' ?>"><i class="bi bi-plus-circle"></i> Add Stock</a>
-        <a href="<?= base_url('stock/scan') ?>" class="<?= uri_string() == 'stock/scan' ? 'active' : '' ?>"><i class="bi bi-qr-code-scan"></i> Scan & Sell</a>
-        <a href="<?= base_url('stock/transfer') ?>" class="<?= uri_string() == 'stock/transfer' ? 'active' : '' ?>"><i class="bi bi-arrow-left-right"></i> Transfer</a>
-        <a href="<?= base_url('stock/low-stock') ?>" class="<?= uri_string() == 'stock/low-stock' ? 'active' : '' ?>"><i class="bi bi-exclamation-triangle"></i> Low Stock</a>
-        <a href="<?= base_url('stock/audit-log') ?>" class="<?= uri_string() == 'stock/audit-log' ? 'active' : '' ?>"><i class="bi bi-journal-text"></i> Audit Log</a>
-        <a href="<?= base_url('stock/label-generate') ?>" class="<?= uri_string() == 'stock/label-generate' ? 'active' : '' ?>"><i class="bi bi-printer"></i> Generate Labels</a>
-        <a href="<?= base_url('stock/qr-registry') ?>" class="<?= uri_string() == 'stock/qr-registry' ? 'active' : '' ?>"><i class="bi bi-upc-scan"></i> QR Registry</a>
-        <div class="nav-section">Manufacturing</div>
-        <a href="<?= base_url('karigar') ?>" class="<?= str_starts_with(uri_string(), 'karigar') && !str_starts_with(uri_string(), 'karigar-ledger') ? 'active' : '' ?>"><i class="bi bi-person-badge"></i> Karigar</a>
-        <a href="<?= base_url('melt-jobs') ?>" class="<?= str_starts_with(uri_string(), 'melt-jobs') ? 'active' : '' ?>"><i class="bi bi-fire"></i> Melt Jobs</a>
-        <a href="<?= base_url('part-orders') ?>" class="<?= str_starts_with(uri_string(), 'part-orders') ? 'active' : '' ?>"><i class="bi bi-clipboard2-check"></i> Part Orders</a>
-        <a href="<?= base_url('karigar-ledger') ?>" class="<?= str_starts_with(uri_string(), 'karigar-ledger') ? 'active' : '' ?>"><i class="bi bi-journal-bookmark"></i> Karigar Ledger</a>
-        <div class="nav-section">Mfg Stock</div>
-        <a href="<?= base_url('part-stock') ?>" class="<?= str_starts_with(uri_string(), 'part-stock') ? 'active' : '' ?>"><i class="bi bi-boxes"></i> Part Batches</a>
-        <a href="<?= base_url('gatti-stock') ?>" class="<?= uri_string() == 'gatti-stock' ? 'active' : '' ?>"><i class="bi bi-bar-chart-steps"></i> Gatti Stock</a>
-        <a href="<?= base_url('raw-materials') ?>" class="<?= str_starts_with(uri_string(), 'raw-materials') ? 'active' : '' ?>"><i class="bi bi-collection"></i> Raw Materials</a>
-        <a href="<?= base_url('byproducts') ?>" class="<?= uri_string() == 'byproducts' ? 'active' : '' ?>"><i class="bi bi-recycle"></i> Byproducts</a>
-        <div class="nav-section">Mfg Masters</div>
-        <a href="<?= base_url('raw-material-types') ?>" class="<?= str_starts_with(uri_string(), 'raw-material-types') ? 'active' : '' ?>"><i class="bi bi-list-ul"></i> Raw Material Types</a>
-        <a href="<?= base_url('byproduct-types') ?>" class="<?= str_starts_with(uri_string(), 'byproduct-types') ? 'active' : '' ?>"><i class="bi bi-list-ul"></i> Byproduct Types</a>
-        <a href="<?= base_url('kacha') ?>" class="<?= str_starts_with(uri_string(), 'kacha') ? 'active' : '' ?>"><i class="bi bi-droplet"></i> Kacha</a>
+        <div style="flex:1; overflow-y:auto;">
+        <?php foreach ($sidebarModules as $module): ?>
+            <?php if (!$canViewModule($module, $normalizedRole, $userModules)): ?>
+                <?php continue; ?>
+            <?php endif; ?>
+            <div class="nav-section"><?= esc($module['title']) ?></div>
+            <?php foreach ($module['items'] as $item): ?>
+                <?php
+                    $isActive = $item['match']($currentUri);
+                    $itemClasses = $isActive ? 'active' : '';
+                    $itemStyles = !empty($item['indent']) ? 'padding-left:28px;font-size:12px;' : '';
+                ?>
+                <a href="<?= $item['url'] ?>" class="<?= $itemClasses ?>"<?= $itemStyles !== '' ? ' style="' . $itemStyles . '"' : '' ?>>
+                    <i class="bi <?= esc($item['icon']) ?>"></i><?= esc($item['label']) ?>
+                </a>
+            <?php endforeach; ?>
+        <?php endforeach; ?>
+        </div>
+        <div style="border-top:1px solid #34495e; padding:12px 16px; margin-top:auto;">
+            <div style="font-size:12px; color:#7f8c8d; margin-bottom:8px; padding:0 4px;">
+                <i class="bi bi-person-circle"></i>
+                <?= esc($currentUser['name'] ?? $currentUser['username'] ?? 'User') ?>
+                <span class="badge ms-1" style="background:#34495e;font-size:10px;">
+                    <?= esc($currentUser['role'] ?? 'user') ?>
+                </span>
+            </div>
+            <a href="<?= base_url('logout') ?>" class="d-block text-center"
+               style="color:#e74c3c;font-size:13px;padding:7px;border-radius:5px;background:#2c3e50;text-decoration:none;"
+               onmouseover="this.style.background='#e74c3c';this.style.color='white';"
+               onmouseout="this.style.background='#2c3e50';this.style.color='#e74c3c';">
+                <i class="bi bi-box-arrow-right"></i> Logout
+            </a>
+        </div>
     </div>
 
     <div class="main-content">
@@ -146,23 +264,66 @@
         var sidebar = document.getElementById('sidebar');
         var closeBtn = document.getElementById('sidebarClose');
         var toggleBtn = document.getElementById('sidebarToggle');
+        var backdrop = document.getElementById('sidebarBackdrop');
+        var mobileQuery = window.matchMedia('(max-width: 991.98px)');
+        var navLinks = sidebar.querySelectorAll('a');
+
+        function isMobile() {
+            return mobileQuery.matches;
+        }
 
         function collapse() {
+            if (isMobile()) {
+                body.classList.remove('sidebar-open-mobile');
+                body.classList.add('sidebar-collapsed');
+                return;
+            }
+
             sidebar.classList.add('collapsed');
             body.classList.add('sidebar-collapsed');
             localStorage.setItem(STORAGE_KEY, 'collapsed');
         }
         function expand() {
+            if (isMobile()) {
+                body.classList.add('sidebar-open-mobile');
+                body.classList.remove('sidebar-collapsed');
+                return;
+            }
+
             sidebar.classList.remove('collapsed');
             body.classList.remove('sidebar-collapsed');
             localStorage.setItem(STORAGE_KEY, 'open');
         }
+        function syncSidebarMode() {
+            if (isMobile()) {
+                sidebar.classList.remove('collapsed');
+                body.classList.add('sidebar-collapsed');
+                body.classList.remove('sidebar-open-mobile');
+                return;
+            }
 
-        // Restore state on page load
-        if (localStorage.getItem(STORAGE_KEY) === 'collapsed') collapse();
+            body.classList.remove('sidebar-open-mobile');
+            if (localStorage.getItem(STORAGE_KEY) === 'collapsed') {
+                sidebar.classList.add('collapsed');
+                body.classList.add('sidebar-collapsed');
+                return;
+            }
+
+            sidebar.classList.remove('collapsed');
+            body.classList.remove('sidebar-collapsed');
+        }
+
+        syncSidebarMode();
 
         closeBtn.addEventListener('click', collapse);
         toggleBtn.addEventListener('click', expand);
+        backdrop.addEventListener('click', collapse);
+        mobileQuery.addEventListener('change', syncSidebarMode);
+        navLinks.forEach(function(link) {
+            link.addEventListener('click', function() {
+                if (isMobile()) collapse();
+            });
+        });
     })();
     </script>
     <?= $this->renderSection('scripts') ?>

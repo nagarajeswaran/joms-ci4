@@ -18,7 +18,8 @@ class UserModel extends Model
         'email',
         'name',
         'role',
-        'status'
+        'modules',
+        'status',
     ];
     
     protected $useTimestamps = true;
@@ -46,6 +47,10 @@ class UserModel extends Model
     public function login($username, $password)
     {
         $user = $this->where('username', $username)->first();
+
+        if (!$user && $this->db->fieldExists('name', $this->table)) {
+            $user = $this->where('name', $username)->first();
+        }
         
         if (!$user) {
             return false;

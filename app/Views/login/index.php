@@ -62,6 +62,12 @@
             border-radius: 5px;
             font-size: 14px;
         }
+        .form-group small {
+            display: block;
+            margin-top: 6px;
+            color: #777;
+            font-size: 12px;
+        }
         
         .form-group input:focus {
             outline: none;
@@ -110,13 +116,22 @@
             color: #999;
             font-size: 12px;
         }
+        .setup-note {
+            margin-bottom: 18px;
+            padding: 12px 14px;
+            background: #eef4ff;
+            border: 1px solid #d7e3ff;
+            border-radius: 6px;
+            color: #35518a;
+            font-size: 13px;
+        }
     </style>
 </head>
 <body>
     <div class="login-container">
         <div class="login-header">
             <h1>JOMS Login</h1>
-            <p>CodeIgniter 4 Version</p>
+            <p><?= !empty($canSetupAdmin) ? 'Create your first admin account' : 'CodeIgniter 4 Version' ?></p>
         </div>
         
         <?php if (session()->getFlashdata('error')): ?>
@@ -131,18 +146,38 @@
             </div>
         <?php endif; ?>
         
-        <form method="POST" action="<?= base_url('login') ?>">
+        <?php if (!empty($canSetupAdmin)): ?>
+            <div class="setup-note">
+                No admin user exists yet. Create the first admin account here.
+            </div>
+        <?php endif; ?>
+
+        <form method="POST" action="">
+            <?php if (!empty($canSetupAdmin)): ?>
+                <input type="hidden" name="setup_admin" value="1">
+                <div class="form-group">
+                    <label for="name">Name</label>
+                    <input type="text" id="name" name="name" value="<?= esc(old('name')) ?>">
+                </div>
+                <div class="form-group">
+                    <label for="email">Email</label>
+                    <input type="email" id="email" name="email" value="<?= esc(old('email')) ?>">
+                </div>
+            <?php endif; ?>
             <div class="form-group">
                 <label for="username">Username</label>
-                <input type="text" id="username" name="username" required autofocus>
+                <input type="text" id="username" name="username" value="<?= esc(old('username')) ?>" required autofocus>
             </div>
             
             <div class="form-group">
                 <label for="password">Password</label>
                 <input type="password" id="password" name="password" required>
+                <?php if (!empty($canSetupAdmin)): ?>
+                    <small>Use at least 6 characters.</small>
+                <?php endif; ?>
             </div>
             
-            <button type="submit" class="btn-login">Login</button>
+            <button type="submit" class="btn-login"><?= !empty($canSetupAdmin) ? 'Create Admin Account' : 'Login' ?></button>
         </form>
         
         <div class="version">

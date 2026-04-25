@@ -18,9 +18,15 @@ class RawMaterialType extends BaseController
     public function store()
     {
         $db = \Config\Database::connect();
+        $isDefaultAlloy = $this->request->getPost('is_default_alloy') ? 1 : 0;
+        if ($isDefaultAlloy) {
+            $db->table('raw_material_type')->update(['is_default_alloy' => 0]);
+        }
         $db->table('raw_material_type')->insert([
             'name'              => $this->request->getPost('name'),
             'default_touch_pct' => $this->request->getPost('default_touch_pct') ?: 0,
+            'material_group'    => $this->request->getPost('material_group') ?: 'other',
+            'is_default_alloy'  => $isDefaultAlloy,
         ]);
         return redirect()->to('raw-material-types')->with('success', 'Added');
     }
@@ -36,9 +42,15 @@ class RawMaterialType extends BaseController
     public function update($id)
     {
         $db = \Config\Database::connect();
+        $isDefaultAlloy = $this->request->getPost('is_default_alloy') ? 1 : 0;
+        if ($isDefaultAlloy) {
+            $db->table('raw_material_type')->where('id !=', $id)->update(['is_default_alloy' => 0]);
+        }
         $db->table('raw_material_type')->where('id', $id)->update([
             'name'              => $this->request->getPost('name'),
             'default_touch_pct' => $this->request->getPost('default_touch_pct') ?: 0,
+            'material_group'    => $this->request->getPost('material_group') ?: 'other',
+            'is_default_alloy'  => $isDefaultAlloy,
         ]);
         return redirect()->to('raw-material-types')->with('success', 'Updated');
     }

@@ -65,16 +65,14 @@ class Stock extends BaseController
 
     public function index()
     {
-        $q       = $this->request->getGet('q') ?? '';
-        $locId   = (int)($this->request->getGet('loc') ?? 0);
-        $showLow = $this->request->getGet('low') == '1';
-
         $locations = $this->db->query('SELECT * FROM stock_location WHERE is_active=1 ORDER BY name')->getResultArray();
 
-        $sql = '
+        // Fetch all stock rows with product image
+        $rows = $this->db->query('
             SELECT ps.*,
-                   p.name AS product_name, p.sku,
-                   pp.name AS pattern_name, pp.is_default AS pat_is_default,
+                   p.name AS product_name, p.sku, p.image AS product_image,
+                   pp.name AS pattern_name, pp.tamil_name AS pattern_tamil_name,
+                   pp.is_default AS pat_is_default, pp.pattern_code,
                    v.name AS variation_name, v.size AS variation_size,
                    sl.name AS location_name, sl.code AS location_code
             FROM product_stock ps
@@ -83,36 +81,72 @@ class Stock extends BaseController
             JOIN variation v        ON v.id  = ps.variation_id
             JOIN stock_location sl  ON sl.id = ps.location_id
             WHERE sl.is_active = 1
-        ';
-        $params = [];
-        if ($q) {
-            $sql .= ' AND (p.name LIKE ? OR p.sku LIKE ? OR v.name LIKE ?)';
-            $params = array_merge($params, ["%$q%", "%$q%", "%$q%"]);
-        }
-        if ($locId) {
-            $sql .= ' AND ps.location_id = ?';
-            $params[] = $locId;
-        }
-        if ($showLow) {
-            $sql .= ' AND ps.min_qty > 0 AND ps.qty < ps.min_qty';
-        }
-        $sql .= ' ORDER BY p.name, pp.name, v.size, sl.name';
-        $rows = $this->db->query($sql, $params)->getResultArray();
+            ORDER BY p.name, pp.name, v.size, sl.name
+        ')->getResultArray();
 
-        $lowCount = (int)$this->db->query(
+        // Group into nested structure: product → pattern → variations[]
+        $products = [];
+        foreach ($rows as $r) {
+            $pid  = $r['product_id'];
+            $ptid = $r['pattern_id'];
+            if (!isset($products[$pid])) {
+                $products[$pid] = [
+                    'product'   => [
+                        'id'    => $pid,
+                        'name'  => $r['product_name'],
+                        'sku'   => $r['sku'],
+                        'image' => $r['product_image'],
+                    ],
+                    'total_qty' => 0,
+                    'low_count' => 0,
+                    'patterns'  => [],
+                ];
+            }
+            if (!isset($products[$pid]['patterns'][$ptid])) {
+                $products[$pid]['patterns'][$ptid] = [
+                    'pattern'    => [
+                        'id'           => $ptid,
+                        'name'         => $r['pattern_name'],
+                        'is_default'   => $r['pat_is_default'],
+                        'pattern_code' => $r['pattern_code'] ?? '',
+                        'tamil_name'   => $r['pattern_tamil_name'] ?? '',
+                    ],
+                    'variations' => [],
+                ];
+            }
+            $isLow = $r['min_qty'] > 0 && $r['qty'] < $r['min_qty'];
+            $products[$pid]['total_qty']           += (int)$r['qty'];
+            if ($isLow) $products[$pid]['low_count']++;
+            $products[$pid]['patterns'][$ptid]['variations'][] = [
+                'id'             => $r['variation_id'],
+                'name'           => $r['variation_name'],
+                'size'           => $r['variation_size'],
+                'location_id'    => $r['location_id'],
+                'location_name'  => $r['location_name'],
+                'qty'            => (int)$r['qty'],
+                'min_qty'        => (int)$r['min_qty'],
+                'stock_id'       => $r['id'],
+                'is_low'         => $isLow,
+                'updated_at'     => $r['updated_at'],
+            ];
+        }
+
+        $lowCount  = (int)$this->db->query(
             'SELECT COUNT(*) AS c FROM product_stock WHERE min_qty > 0 AND qty <= min_qty'
         )->getRowArray()['c'];
+        $totalQty  = array_sum(array_column($products, 'total_qty'));
 
         $title = 'Stock Overview';
-        return view('stock/index', compact('rows', 'locations', 'locId', 'q', 'showLow', 'lowCount', 'title'));
+        return view('stock/index', compact('products', 'locations', 'lowCount', 'totalQty', 'title'));
     }
 
     public function entry()
     {
         $locations = $this->db->query('SELECT * FROM stock_location WHERE is_active=1 ORDER BY name')->getResultArray();
-        $products  = $this->db->query('SELECT id, name, sku FROM product ORDER BY name')->getResultArray();
+        $products  = $this->db->query('SELECT id, name, sku, image FROM product ORDER BY name')->getResultArray();
+        $preProduct = (int)($this->request->getGet('product_id') ?? 0);
         $title = 'Stock Entry';
-        return view('stock/entry', compact('locations', 'products', 'title'));
+        return view('stock/entry', compact('locations', 'products', 'preProduct', 'title'));
     }
 
     public function getEntryGrid()
@@ -154,7 +188,7 @@ class Stock extends BaseController
     {
         $productId = (int)$this->request->getPost('product_id');
         $patterns  = $this->db->query(
-            'SELECT id, name, is_default FROM product_pattern WHERE product_id=? ORDER BY is_default DESC, name',
+            'SELECT id, name, pattern_code, tamil_name, is_default FROM product_pattern WHERE product_id=? ORDER BY is_default DESC, name',
             [$productId]
         )->getResultArray();
         return $this->response->setJSON($patterns);
@@ -218,9 +252,19 @@ class Stock extends BaseController
 
     public function minStock()
     {
-        $locations = $this->db->query('SELECT * FROM stock_location WHERE is_active=1 ORDER BY name')->getResultArray();
-        $products  = $this->db->query('SELECT id, name, sku FROM product ORDER BY name')->getResultArray();
-        return view('stock/min_stock', ['title' => 'Set Minimum Stock', 'locations' => $locations, 'products' => $products]);
+        $locations   = $this->db->query('SELECT * FROM stock_location WHERE is_active=1 ORDER BY name')->getResultArray();
+        $products    = $this->db->query('SELECT id, name, sku, image FROM product ORDER BY name')->getResultArray();
+        $preProduct  = (int)($this->request->getGet('product_id')  ?? 0);
+        $prePattern  = (int)($this->request->getGet('pattern_id')  ?? 0);
+        $preLocation = (int)($this->request->getGet('location_id') ?? 0);
+        return view('stock/min_stock', [
+            'title'       => 'Set Minimum Stock',
+            'locations'   => $locations,
+            'products'    => $products,
+            'preProduct'  => $preProduct,
+            'prePattern'  => $prePattern,
+            'preLocation' => $preLocation,
+        ]);
     }
 
     public function saveMinStock()
@@ -381,7 +425,7 @@ class Stock extends BaseController
             }
         }
 
-        $product   = $this->db->query('SELECT id, name, sku FROM product WHERE id=?', [$productId])->getRowArray();
+        $product   = $this->db->query('SELECT id, name, sku, image FROM product WHERE id=?', [$productId])->getRowArray();
         $pattern   = $this->db->query('SELECT id, name, is_default FROM product_pattern WHERE id=?', [$patternId])->getRowArray();
         $variation = $this->db->query('SELECT id, name, size FROM variation WHERE id=?', [$variationId])->getRowArray();
 
@@ -474,7 +518,7 @@ class Stock extends BaseController
     public function transfer()
     {
         $locations = $this->db->query('SELECT * FROM stock_location WHERE is_active=1 ORDER BY name')->getResultArray();
-        $products  = $this->db->query('SELECT id, name, sku FROM product ORDER BY name')->getResultArray();
+        $products  = $this->db->query('SELECT id, name, sku, image FROM product ORDER BY name')->getResultArray();
         $title = 'Stock Transfer';
         return view('stock/transfer', compact('locations', 'products', 'title'));
     }
@@ -558,7 +602,7 @@ class Stock extends BaseController
     {
         $rows = $this->db->query('
             SELECT ps.*,
-                   p.name AS product_name, p.sku,
+                   p.name AS product_name, p.sku, p.image AS product_image,
                    pp.name AS pattern_name, pp.is_default AS pat_is_default,
                    v.name AS variation_name, v.size AS variation_size,
                    sl.name AS location_name
@@ -619,6 +663,23 @@ class Stock extends BaseController
         return view('stock/audit_log', compact('transactions', 'locations', 'locId', 'type', 'from', 'to', 'q', 'title'));
     }
 
+    public function editNote($id)
+    {
+        $tx = $this->db->query('SELECT id FROM stock_transaction WHERE id = ?', [$id])->getRowArray();
+        if (!$tx) return redirect()->to('stock/audit-log')->with('error', 'Transaction not found');
+
+        $note = trim($this->request->getPost('note') ?? '');
+        $this->db->query('UPDATE stock_transaction SET note = ? WHERE id = ?', [$note, $id]);
+
+        return redirect()->to('stock/audit-log?' . http_build_query([
+            'loc'  => $this->request->getPost('_loc')  ?? '',
+            'type' => $this->request->getPost('_type') ?? '',
+            'from' => $this->request->getPost('_from') ?? '',
+            'to'   => $this->request->getPost('_to')   ?? '',
+            'q'    => $this->request->getPost('_q')    ?? '',
+        ]))->with('success', 'Note updated');
+    }
+
     public function bulkDeduct()
     {
         $locationId = (int)$this->request->getPost('location_id');
@@ -628,6 +689,7 @@ class Stock extends BaseController
 
         if (!$locationId) return $this->response->setJSON(['error' => 'Location required']);
         if (empty($items)) return $this->response->setJSON(['error' => 'No items to deduct']);
+        if (empty(trim($notes))) return $this->response->setJSON(['error' => 'Notes are required for a sale/issue']);
 
         $now = date('Y-m-d H:i:s');
         $deducted = 0;

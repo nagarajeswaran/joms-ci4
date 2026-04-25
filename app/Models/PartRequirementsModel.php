@@ -6,5 +6,5 @@ class PartRequirementsModel extends Model
 {
     protected $table = 'part_requirements';
     protected $primaryKey = 'id';
-    protected $allowedFields = ['order_id', 'part_id', 'quantity_required'];
+    protected $allowedFields = ['order_id', 'part_id', 'part_pcs'];
 }

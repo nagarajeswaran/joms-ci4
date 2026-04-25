@@ -156,6 +156,17 @@ class PartOrder extends BaseController
         $stamps      = $db->query('SELECT id, name FROM stamp ORDER BY name')->getResultArray();
         $parts       = $db->query('SELECT id, name, gatti FROM part ORDER BY name')->getResultArray();
         $byprods     = $db->query('SELECT id, name FROM byproduct_type ORDER BY name')->getResultArray();
+        $pendingReceives = [];
+        if ($this->tableExists('pending_receive_entry')) {
+            $pendingReceives = $db->query('
+                SELECT pre.*, p.name AS part_name, s.name AS stamp_name
+                FROM pending_receive_entry pre
+                LEFT JOIN part p ON p.id = pre.part_id
+                LEFT JOIN stamp s ON s.id = pre.stamp_id
+                WHERE pre.status = ?
+                ORDER BY pre.created_at DESC, pre.id DESC
+            ', ['pending'])->getResultArray();
+        }
 
         // Manufacturing Allocation Plan
         $allocations = $db->query('
@@ -181,6 +192,7 @@ class PartOrder extends BaseController
             'stamps'              => $stamps,
             'parts'               => $parts,
             'byprods'             => $byprods,
+            'pendingReceives'     => $pendingReceives,
             'totalIssuedFine'     => $totalIssuedFine,
             'totalIssuedWeight'   => $totalIssuedWeight,
             'totalRecvFine'       => $totalRecvFine,
@@ -489,51 +501,17 @@ class PartOrder extends BaseController
         }
 
         $qty         = 0;
-        $partBatchId = null;
 
         if ($receiveType === 'part') {
             $partId = $this->request->getPost('part_id');
-            if ($pcWeight > 0) $qty = (int)round($weight / $pcWeight);
-
-            if ($batchNo) {
-                $batch = $db->query('SELECT * FROM part_batch WHERE batch_number = ?', [$batchNo])->getRowArray();
-                if ($batch) {
-                    $partBatchId = $batch['id'];
-                    $db->table('part_batch')->where('id', $batch['id'])->update([
-                        'piece_weight_g'      => $pcWeight ?: $batch['piece_weight_g'],
-                        'touch_pct'           => $touch,
-                        'qty_in_stock'        => $batch['qty_in_stock'] + $qty,
-                        'weight_in_stock_g'   => (float)$batch['weight_in_stock_g'] + $weight,
-                        'source_part_order_id'=> $id,
-                        'received_at'         => date('Y-m-d H:i:s'),
-                    ]);
-                } else {
-                    $db->table('part_batch')->insert([
-                        'batch_number'        => $batchNo,
-                        'part_id'             => $partId,
-                        'piece_weight_g'      => $pcWeight,
-                        'touch_pct'           => $touch,
-                        'qty_in_stock'        => $qty,
-                        'weight_in_stock_g'   => $weight,
-                        'source_part_order_id'=> $id,
-                        'received_at'         => date('Y-m-d H:i:s'),
-                    ]);
-                    $partBatchId = $db->insertID();
-                }
-            }
-
-            $db->table('part_order_receive')->insert([
-                'part_order_id'   => $id,
-                'receive_type'    => 'part',
-                'part_id'         => $partId,
-                'batch_number'    => $batchNo,
-                'part_batch_id'   => $partBatchId,
-                'weight_g'        => $weight,
-                'piece_weight_g'  => $pcWeight,
-                'qty'             => $qty,
-                'touch_pct'       => $touch,
-                'stamp_id'        => $this->request->getPost('stamp_id') ?: null,
-                'received_at'     => date('Y-m-d H:i:s'),
+            $this->_createPartReceive($db, [
+                'part_order_id'  => $id,
+                'part_id'        => $partId,
+                'batch_number'   => $batchNo,
+                'weight_g'       => $weight,
+                'piece_weight_g' => $pcWeight,
+                'touch_pct'      => $touch,
+                'stamp_id'       => $this->request->getPost('stamp_id') ?: null,
             ]);
         } else {
             $byprodTypeId = $this->request->getPost('byproduct_type_id');
@@ -556,6 +534,64 @@ class PartOrder extends BaseController
         }
 
         return redirect()->to('part-orders/view/'.$id)->with('success', 'Receive row added');
+    }
+
+    public function importPendingReceives($id)
+    {
+        $db = \Config\Database::connect();
+        $po = $db->query('SELECT * FROM part_order WHERE id = ?', [$id])->getRowArray();
+        if (!$po || $po['status'] === 'posted') {
+            return redirect()->to('part-orders/view/'.$id)->with('error', 'Cannot modify');
+        }
+        if (!$this->tableExists('pending_receive_entry')) {
+            return redirect()->to('part-orders/view/'.$id)->with('error', 'Pending receive table is missing. Please create the new database table first.');
+        }
+
+        $pendingIds = $this->request->getPost('pending_receive_ids') ?? [];
+        if (!is_array($pendingIds) || !$pendingIds) {
+            return redirect()->to('part-orders/view/'.$id)->with('error', 'Select at least one pending receive row');
+        }
+
+        $imported = 0;
+        foreach ($pendingIds as $pendingId) {
+            $pendingId = (int)$pendingId;
+            if ($pendingId <= 0) {
+                continue;
+            }
+
+            $row = $db->query('SELECT * FROM pending_receive_entry WHERE id = ?', [$pendingId])->getRowArray();
+            if (!$row || $row['status'] !== 'pending') {
+                continue;
+            }
+
+            $receiveId = $this->_createPartReceive($db, [
+                'part_order_id'  => $id,
+                'part_id'        => $row['part_id'],
+                'batch_number'   => $row['batch_number'],
+                'weight_g'       => (float)$row['weight_g'],
+                'piece_weight_g' => (float)($row['piece_weight_g'] ?: 0),
+                'touch_pct'      => (float)$row['touch_pct'],
+                'stamp_id'       => $row['stamp_id'] ?: null,
+            ]);
+
+            $db->table('pending_receive_entry')->where('id', $pendingId)->where('status', 'pending')->update([
+                'status'               => 'used',
+                'linked_part_order_id' => $id,
+                'linked_receive_id'    => $receiveId,
+                'used_at'              => date('Y-m-d H:i:s'),
+                'updated_at'           => date('Y-m-d H:i:s'),
+            ]);
+
+            if ($db->affectedRows() > 0) {
+                $imported++;
+            }
+        }
+
+        if ($imported === 0) {
+            return redirect()->to('part-orders/view/'.$id)->with('error', 'No pending rows were imported');
+        }
+
+        return redirect()->to('part-orders/view/'.$id)->with('success', $imported.' pending receive row(s) imported');
     }
 
     public function deleteReceive($recvId)
@@ -723,6 +759,62 @@ class PartOrder extends BaseController
         $db->query('UPDATE part_order_receive SET weight_g = ?, piece_weight_g = ?, qty = ?, touch_pct = ? WHERE id = ?', [$newWeight, $newPcWt ?: null, $newQty, $newTouch, $recvId]);
 
         return redirect()->to('part-orders/view/'.$recv['part_order_id'])->with('success', 'Receive updated');
+    }
+
+    private function _createPartReceive($db, array $data)
+    {
+        $partOrderId = (int)$data['part_order_id'];
+        $partId      = (int)$data['part_id'];
+        $batchNo     = trim((string)($data['batch_number'] ?? ''));
+        $weight      = (float)($data['weight_g'] ?? 0);
+        $pcWeight    = (float)($data['piece_weight_g'] ?? 0);
+        $touch       = (float)($data['touch_pct'] ?? 0);
+        $stampId     = $data['stamp_id'] ?? null;
+        $qty         = $pcWeight > 0 ? (int)round($weight / $pcWeight) : 0;
+        $partBatchId = null;
+
+        if ($batchNo !== '') {
+            $batch = $db->query('SELECT * FROM part_batch WHERE batch_number = ?', [$batchNo])->getRowArray();
+            if ($batch) {
+                $partBatchId = $batch['id'];
+                $db->table('part_batch')->where('id', $batch['id'])->update([
+                    'piece_weight_g'       => $pcWeight ?: $batch['piece_weight_g'],
+                    'touch_pct'            => $touch,
+                    'qty_in_stock'         => (int)$batch['qty_in_stock'] + $qty,
+                    'weight_in_stock_g'    => (float)$batch['weight_in_stock_g'] + $weight,
+                    'source_part_order_id' => $partOrderId,
+                    'received_at'          => date('Y-m-d H:i:s'),
+                ]);
+            } else {
+                $db->table('part_batch')->insert([
+                    'batch_number'         => $batchNo,
+                    'part_id'              => $partId,
+                    'piece_weight_g'       => $pcWeight ?: null,
+                    'touch_pct'            => $touch,
+                    'qty_in_stock'         => $qty,
+                    'weight_in_stock_g'    => $weight,
+                    'source_part_order_id' => $partOrderId,
+                    'received_at'          => date('Y-m-d H:i:s'),
+                ]);
+                $partBatchId = $db->insertID();
+            }
+        }
+
+        $db->table('part_order_receive')->insert([
+            'part_order_id'  => $partOrderId,
+            'receive_type'   => 'part',
+            'part_id'        => $partId,
+            'batch_number'   => $batchNo,
+            'part_batch_id'  => $partBatchId,
+            'weight_g'       => $weight,
+            'piece_weight_g' => $pcWeight ?: null,
+            'qty'            => $qty,
+            'touch_pct'      => $touch,
+            'stamp_id'       => $stampId,
+            'received_at'    => date('Y-m-d H:i:s'),
+        ]);
+
+        return (int)$db->insertID();
     }
 
     private function _nextOrderNumber()

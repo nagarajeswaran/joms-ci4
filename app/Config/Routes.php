@@ -6,6 +6,29 @@ use CodeIgniter\Router\RouteCollection;
  * @var RouteCollection $routes
  */
 $routes->get('/', 'ProductTypes::index');
+$routes->match(['get', 'post'], 'login', 'Login::index');
+$routes->get('logout', 'Login::logout');
+
+// User Management (admin only)
+$routes->get('users', 'Users::index');
+$routes->get('users/create', 'Users::create');
+$routes->post('users/create', 'Users::create');
+$routes->get('users/edit/(:num)', 'Users::edit/$1');
+$routes->post('users/edit/(:num)', 'Users::edit/$1');
+$routes->post('users/delete/(:num)', 'Users::delete/$1');
+
+$routes->match(['get', 'post'], 'staff/login', 'Staff::login');
+$routes->get('staff/logout', 'Staff::logout');
+$routes->match(['get', 'post'], 'staff/users/create', 'Staff::createUser');
+
+$routes->group('staff', static function ($routes) {
+    $routes->get('/', 'Staff::index');
+    $routes->get('users', 'Staff::users');
+    $routes->get('touch-booking', 'Staff::touchBooking');
+    $routes->get('touch-booking/create', 'Staff::touchCreate');
+    $routes->post('touch-booking/store', 'Staff::touchStore');
+    $routes->get('stock-lookup', 'Staff::stockLookup');
+});
 
 // Product Types
 $routes->get('product-types', 'ProductTypes::index');
@@ -208,6 +231,24 @@ $routes->post('karigar/get-info', 'Karigar::getInfo');
 $routes->post('karigar/(:num)/charge-rule/store', 'Karigar::storeChargeRule/$1');
 $routes->get('karigar/charge-rule/(:num)/delete', 'Karigar::deleteChargeRule/$1');
 
+// Assembly Work
+$routes->get('assembly-work', 'AssemblyWork::index');
+$routes->get('assembly-work/create', 'AssemblyWork::create');
+$routes->post('assembly-work/store', 'AssemblyWork::store');
+$routes->get('assembly-work/view/(:num)', 'AssemblyWork::view/$1');
+$routes->post('assembly-work/(:num)/add-order', 'AssemblyWork::addOrder/$1');
+$routes->get('assembly-work/(:num)/remove-order/(:num)', 'AssemblyWork::removeOrder/$1/$2');
+$routes->post('assembly-work/(:num)/add-issue', 'AssemblyWork::addIssue/$1');
+$routes->post('assembly-work/issue/update/(:num)', 'AssemblyWork::updateIssue/$1');
+$routes->get('assembly-work/issue/delete/(:num)', 'AssemblyWork::deleteIssue/$1');
+$routes->post('assembly-work/(:num)/add-receive', 'AssemblyWork::addReceive/$1');
+$routes->post('assembly-work/receive/update/(:num)', 'AssemblyWork::updateReceive/$1');
+$routes->get('assembly-work/receive/delete/(:num)', 'AssemblyWork::deleteReceive/$1');
+$routes->post('assembly-work/(:num)/save-summary', 'AssemblyWork::saveSummary/$1');
+$routes->get('assembly-work/finish/(:num)', 'AssemblyWork::markFinished/$1');
+$routes->post('assembly-work/(:num)/save-making-charge', 'AssemblyWork::saveMakingCharge/$1');
+$routes->get('assembly-work/complete/(:num)', 'AssemblyWork::complete/$1');
+
 // Raw Material Types
 $routes->get('raw-material-types', 'RawMaterialType::index');
 $routes->get('raw-material-types/create', 'RawMaterialType::create');
@@ -233,6 +274,14 @@ $routes->post('kacha/update/(:num)', 'Kacha::update/$1');
 $routes->get('kacha/delete/(:num)', 'Kacha::delete/$1');
 $routes->get('kacha/view/(:num)', 'Kacha::view/$1');
 $routes->post('kacha/list-available', 'Kacha::listAvailable');
+
+// Finished Goods
+$routes->get('finished-goods', 'FinishedGoods::index');
+$routes->get('finished-goods/create', 'FinishedGoods::create');
+$routes->post('finished-goods/store', 'FinishedGoods::store');
+$routes->get('finished-goods/edit/(:num)', 'FinishedGoods::edit/$1');
+$routes->post('finished-goods/update/(:num)', 'FinishedGoods::update/$1');
+$routes->get('finished-goods/delete/(:num)', 'FinishedGoods::delete/$1');
 
 // Raw Material Batches
 $routes->get('raw-material-batches', 'RawMaterialBatch::index');
@@ -317,6 +366,7 @@ $routes->post('part-orders/add-issue/(:num)', 'PartOrder::addIssue/$1');
 $routes->post('part-orders/issue/(:num)/update',   'PartOrder::updateIssue/$1');
 $routes->get('part-orders/delete-issue/(:num)', 'PartOrder::deleteIssue/$1');
 $routes->post('part-orders/add-receive/(:num)', 'PartOrder::addReceive/$1');
+$routes->post('part-orders/import-pending-receives/(:num)', 'PartOrder::importPendingReceives/$1');
 $routes->post('part-orders/receive/(:num)/update', 'PartOrder::updateReceive/$1');
 $routes->get('part-orders/delete-receive/(:num)', 'PartOrder::deleteReceive/$1');
 $routes->post('part-orders/post/(:num)', 'PartOrder::post/$1');
@@ -327,6 +377,12 @@ $routes->post('part-orders/(:num)/save-allocation',         'PartOrder::saveAllo
 $routes->get('part-orders/(:num)/delete-allocation/(:num)', 'PartOrder::deleteAllocation/$1/$2');
 $routes->post('part-orders/(:num)/update-display-touch',    'PartOrder::updateDisplayTouch/$1');
 $routes->get('part-orders/(:num)/manf-plan-pdf',            'PartOrder::manfPlanPdf/$1');
+
+// Pending Receive Entry
+$routes->get('pending-receive-entry', 'PendingReceiveEntry::index');
+$routes->post('pending-receive-entry/store', 'PendingReceiveEntry::store');
+$routes->post('pending-receive-entry/update/(:num)', 'PendingReceiveEntry::update/$1');
+$routes->get('pending-receive-entry/cancel/(:num)', 'PendingReceiveEntry::cancel/$1');
 
 // Karigar Ledger
 $routes->get('karigar-ledger', 'KarigarLedger::index');

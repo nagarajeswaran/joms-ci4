@@ -252,10 +252,65 @@
 <div class="card-header d-flex justify-content-between">
     <strong>Received (Parts + Byproducts)</strong>
     <?php if ($po['status']==='draft'): ?>
-    <button class="btn btn-outline-secondary btn-sm" onclick="toggleForm('recvForm')">+ Add Receive</button>
+    <div class="d-flex gap-2">
+        <button class="btn btn-outline-primary btn-sm" onclick="toggleForm('pendingImportForm')">Pick Pending Receive</button>
+        <button class="btn btn-outline-secondary btn-sm" onclick="toggleForm('recvForm')">+ Add Receive</button>
+    </div>
     <?php endif; ?>
 </div>
 <?php if ($po['status']==='draft'): ?>
+<div id="pendingImportForm" style="display:none" class="card-body border-bottom bg-white">
+<div class="d-flex justify-content-between align-items-center mb-2">
+    <strong>Pick from Pending Receive Entry</strong>
+    <a href="<?= base_url('pending-receive-entry') ?>" class="btn btn-sm btn-outline-secondary">Open Queue</a>
+</div>
+<?php if (!empty($pendingReceives)): ?>
+<form method="post" action="<?= base_url('part-orders/import-pending-receives/'.$po['id']) ?>">
+<?= csrf_field() ?>
+<div class="table-responsive">
+<table class="table table-sm table-bordered mb-2">
+    <thead class="table-light">
+        <tr>
+            <th style="width:40px"></th>
+            <th>ID</th>
+            <th>Part</th>
+            <th>Batch</th>
+            <th>Weight (g)</th>
+            <th>Pc Wt (g)</th>
+            <th>Pcs</th>
+            <th>Touch%</th>
+            <th>Stamp</th>
+            <th>Note</th>
+            <th>Created</th>
+            <th>By</th>
+        </tr>
+    </thead>
+    <tbody>
+        <?php foreach ($pendingReceives as $pending): ?>
+        <tr>
+            <td><input type="checkbox" name="pending_receive_ids[]" value="<?= $pending['id'] ?>"></td>
+            <td><?= $pending['id'] ?></td>
+            <td><?= esc($pending['part_name'] ?? '-') ?></td>
+            <td><?= esc($pending['batch_number']) ?></td>
+            <td><?= number_format($pending['weight_g'], 4) ?></td>
+            <td><?= $pending['piece_weight_g'] ? number_format($pending['piece_weight_g'], 4) : '-' ?></td>
+            <td><?= (int)$pending['qty'] ?></td>
+            <td><?= number_format((float)$pending['touch_pct'], 4) ?></td>
+            <td><?= esc($pending['stamp_name'] ?? '-') ?></td>
+            <td><?= esc($pending['note'] ?? '-') ?></td>
+            <td><?= !empty($pending['created_at']) ? date('d/m/Y H:i', strtotime($pending['created_at'])) : '-' ?></td>
+            <td><?= esc($pending['created_by'] ?? '-') ?></td>
+        </tr>
+        <?php endforeach; ?>
+    </tbody>
+</table>
+</div>
+<button type="submit" class="btn btn-primary btn-sm">Import Selected</button>
+</form>
+<?php else: ?>
+<div class="text-muted">No pending receive rows available, or the pending receive table has not been created yet.</div>
+<?php endif; ?>
+</div>
 <div id="recvForm" style="display:none" class="card-body border-bottom bg-light">
 <form method="post" action="<?= base_url('part-orders/add-receive/'.$po['id']) ?>">
 <?= csrf_field() ?>
