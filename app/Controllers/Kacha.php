@@ -69,8 +69,8 @@ class Kacha extends BaseController
             if ($exists) { $errors[] = "Lot number '$lotNum' already exists."; continue; }
 
             $this->db->query(
-                'INSERT INTO kacha_lot (lot_number, weight, touch_pct, receipt_date, party, source_type, test_touch, test_number, notes, created_at)
-                 VALUES (?,?,?,?,?,?,?,?,?,?)',
+                'INSERT INTO kacha_lot (lot_number, weight, touch_pct, receipt_date, party, source_type, test_touch, test_number, notes, created_by, created_at)
+                 VALUES (?,?,?,?,?,?,?,?,?,?,?)',
                 [
                     $lotNum, $weight, $touch,
                     $dates[$i] ?: null,
@@ -79,6 +79,7 @@ class Kacha extends BaseController
                     $testTouches[$i] !== '' ? (float)$testTouches[$i] : null,
                     $testNums[$i] ?: null,
                     $notesList[$i] ?: null,
+                    $this->currentUser(),
                     $now,
                 ]
             );
@@ -155,5 +156,156 @@ class Kacha extends BaseController
         $sql .= ' ORDER BY receipt_date DESC, lot_number';
         $lots = $this->db->query($sql, $params)->getResultArray();
         return $this->response->setJSON($lots);
+    }
+
+    // ── IMPORT ──────────────────────────────────────────────────────────
+    public function importForm()
+    {
+        return view('kacha/import_form', ['title' => 'Import Kacha Lots']);
+    }
+
+    public function importSample()
+    {
+        $csv  = "Lot Number,Weight (g),Touch %,Receipt Date,Party,Source Type,Test Touch,Test Number,Notes\n";
+        $csv .= "LOT-001,500.000,92.50,2024-01-15,ABC Traders,purchase,92.30,T-001,First lot\n";
+        $csv .= "LOT-002,750.000,91.80,2024-01-16,XYZ Gold,internal,,,\n";
+        header('Content-Type: text/csv');
+        header('Content-Disposition: attachment; filename="kacha_lot_sample.csv"');
+        echo $csv;
+        exit;
+    }
+
+    public function importPreview()
+    {
+        $file = $this->request->getFile('import_file');
+        if (!$file || !$file->isValid()) {
+            return redirect()->to('kacha/import')->with('error', 'Please upload a valid file');
+        }
+        $ext = strtolower($file->getClientExtension());
+        if (!in_array($ext, ['csv', 'xlsx'])) {
+            return redirect()->to('kacha/import')->with('error', 'Only CSV and XLSX files are supported');
+        }
+
+        try {
+            $tmpPath = $file->getTempName();
+
+            $existLots = array_column(
+                $this->db->query('SELECT lot_number FROM kacha_lot')->getResultArray(),
+                'lot_number'
+            );
+            $existLotSet = array_flip($existLots);
+
+            $allowedSources = ['purchase', 'internal', 'part_order', 'melt_job'];
+
+            require_once ROOTPATH . 'vendor/autoload.php';
+            if ($ext === 'csv') {
+                $reader = new \PhpOffice\PhpSpreadsheet\Reader\Csv();
+                $sample = file_get_contents($tmpPath, false, null, 0, 4096);
+                if (str_starts_with($sample, "\xEF\xBB\xBF")) {
+                    $reader->setInputEncoding('UTF-8');
+                } elseif (mb_check_encoding($sample, 'UTF-8')) {
+                    $reader->setInputEncoding('UTF-8');
+                } else {
+                    $reader->setInputEncoding('Windows-1252');
+                }
+            } else {
+                $reader = new \PhpOffice\PhpSpreadsheet\Reader\Xlsx();
+            }
+            $spreadsheet = $reader->load($tmpPath);
+            $sheet       = $spreadsheet->getActiveSheet();
+            $rows        = $sheet->toArray(null, true, true, false);
+
+            $preview    = [];
+            $seenInFile = [];
+
+            foreach ($rows as $i => $row) {
+                if ($i === 0) continue; // skip header
+
+                $lotNumber   = trim((string)($row[0] ?? ''));
+                $weight      = (float)($row[1] ?? 0);
+                $touchPct    = (float)($row[2] ?? 0);
+                $receiptDate = trim((string)($row[3] ?? ''));
+                $party       = trim((string)($row[4] ?? ''));
+                $sourceType  = strtolower(trim((string)($row[5] ?? '')));
+                $testTouch   = trim((string)($row[6] ?? ''));
+                $testNumber  = trim((string)($row[7] ?? ''));
+                $notes       = trim((string)($row[8] ?? ''));
+
+                // Handle XLSX numeric dates
+                if ($ext === 'xlsx' && is_numeric($receiptDate) && (float)$receiptDate > 0) {
+                    try {
+                        $receiptDate = \PhpOffice\PhpSpreadsheet\Shared\Date::excelToDateTimeObject((float)$receiptDate)->format('Y-m-d');
+                    } catch (\Exception $e) {
+                        $receiptDate = '';
+                    }
+                }
+                if (!$receiptDate) $receiptDate = date('Y-m-d');
+
+                if (!in_array($sourceType, $allowedSources)) $sourceType = 'purchase';
+
+                $fine = $weight > 0 && $touchPct > 0 ? round($weight * $touchPct / 100, 4) : 0;
+
+                $base = compact('lotNumber', 'weight', 'touchPct', 'receiptDate', 'party', 'sourceType', 'testTouch', 'testNumber', 'notes', 'fine');
+
+                if (!$lotNumber || $weight <= 0 || $touchPct <= 0) {
+                    $preview[] = $base + ['status' => 'error', 'reason' => 'Missing required field (lot number, weight > 0, touch > 0)'];
+                    continue;
+                }
+                if (isset($existLotSet[$lotNumber])) {
+                    $preview[] = $base + ['status' => 'duplicate', 'reason' => 'Lot number already exists in database'];
+                    continue;
+                }
+                if (isset($seenInFile[$lotNumber])) {
+                    $preview[] = $base + ['status' => 'duplicate', 'reason' => 'Duplicate within file'];
+                    continue;
+                }
+
+                $seenInFile[$lotNumber] = true;
+                $preview[] = $base + ['status' => 'ready', 'reason' => ''];
+            }
+
+            session()->set('kacha_import_preview', $preview);
+            return view('kacha/import_preview', ['title' => 'Import Preview', 'rows' => $preview]);
+
+        } catch (\Throwable $e) {
+            return redirect()->to('kacha/import')->with('error', 'Import failed: ' . $e->getMessage());
+        }
+    }
+
+    public function importConfirm()
+    {
+        $rows = session()->get('kacha_import_preview');
+        if (!$rows) return redirect()->to('kacha/import')->with('error', 'Session expired. Please re-upload.');
+
+        $include  = $this->request->getPost('include') ?? [];
+        $imported = 0;
+        $now      = date('Y-m-d H:i:s');
+
+        foreach ($rows as $i => $row) {
+            if ($row['status'] !== 'ready') continue;
+            if (!isset($include[$i])) continue;
+
+            $this->db->query(
+                'INSERT INTO kacha_lot (lot_number, weight, touch_pct, receipt_date, party, source_type, test_touch, test_number, notes, created_by, created_at)
+                 VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+                [
+                    $row['lotNumber'],
+                    $row['weight'],
+                    $row['touchPct'],
+                    $row['receiptDate'] ?: null,
+                    $row['party'] ?: null,
+                    $row['sourceType'] ?: 'purchase',
+                    $row['testTouch'] !== '' ? (float)$row['testTouch'] : null,
+                    $row['testNumber'] ?: null,
+                    $row['notes'] ?: null,
+                    $this->currentUser(),
+                    $now,
+                ]
+            );
+            $imported++;
+        }
+
+        session()->remove('kacha_import_preview');
+        return redirect()->to('kacha')->with('success', "{$imported} lot(s) imported successfully.");
     }
 }

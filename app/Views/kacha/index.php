@@ -2,7 +2,10 @@
 <?= $this->section('content') ?>
 <div class="d-flex justify-content-between align-items-center mb-3">
     <h5 class="mb-0"><i class="bi bi-gem"></i> Kacha — Bullion List</h5>
-    <a href="<?= base_url('kacha/create') ?>" class="btn btn-primary btn-sm"><i class="bi bi-plus"></i> Add Lots</a>
+    <div>
+        <a href="<?= base_url('kacha/import') ?>" class="btn btn-outline-success btn-sm"><i class="bi bi-upload"></i> Import</a>
+        <a href="<?= base_url('kacha/create') ?>" class="btn btn-primary btn-sm"><i class="bi bi-plus"></i> Add Lots</a>
+    </div>
 </div>
 
 <?php if (session()->getFlashdata('success')): ?>

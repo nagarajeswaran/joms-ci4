@@ -274,6 +274,10 @@ $routes->post('kacha/update/(:num)', 'Kacha::update/$1');
 $routes->get('kacha/delete/(:num)', 'Kacha::delete/$1');
 $routes->get('kacha/view/(:num)', 'Kacha::view/$1');
 $routes->post('kacha/list-available', 'Kacha::listAvailable');
+$routes->get( 'kacha/import',         'Kacha::importForm');
+$routes->post('kacha/import/preview', 'Kacha::importPreview');
+$routes->post('kacha/import/confirm', 'Kacha::importConfirm');
+$routes->get( 'kacha/import/sample',  'Kacha::importSample');
 
 // Finished Goods
 $routes->get('finished-goods', 'FinishedGoods::index');
@@ -290,6 +294,9 @@ $routes->post('raw-material-batches/store', 'RawMaterialBatch::store');
 $routes->get('raw-material-batches/view/(:num)', 'RawMaterialBatch::view/$1');
 $routes->post('raw-material-batches/add-stock/(:num)', 'RawMaterialBatch::addStock/$1');
 $routes->get('raw-material-batches/entry', 'RawMaterialBatch::entry');
+$routes->get('raw-material-batches/edit/(:num)', 'RawMaterialBatch::edit/$1');
+$routes->post('raw-material-batches/update/(:num)', 'RawMaterialBatch::update/$1');
+$routes->get('raw-material-batches/delete/(:num)', 'RawMaterialBatch::delete/$1');
 
 // Raw Material Stock
 $routes->get('raw-materials', 'RawMaterialStock::index');
