@@ -86,7 +86,7 @@
                             <tr><td><code>product_name</code></td><td>Name (English)</td><td><span class="badge bg-success">Yes</span></td></tr>
                             <tr><td><code>product_tamil_name</code></td><td>Tamil name</td><td><span class="badge bg-success">Yes</span></td></tr>
                             <tr><td><code>product_short_name</code></td><td>Short / display name</td><td><span class="badge bg-success">Yes</span></td></tr>
-                            <tr><td><code>pattern_id</code></td><td>Pattern ID — reference key</td><td><span class="badge bg-danger">Lock</span></td></tr>
+                            <tr><td><code>pattern_code</code></td><td>Pattern Code — reference key</td><td><span class="badge bg-danger">Lock</span></td></tr>
                             <tr><td><code>pattern_name</code></td><td>Pattern name</td><td><span class="badge bg-success">Yes</span></td></tr>
                             <tr><td><code>pattern_tamil_name</code></td><td>Pattern Tamil name</td><td><span class="badge bg-success">Yes</span></td></tr>
                             <tr><td><code>pattern_short_name</code></td><td>Pattern short name</td><td><span class="badge bg-success">Yes</span></td></tr>
@@ -95,7 +95,7 @@
                 </div>
                 <div class="alert alert-warning py-2 mt-2 mb-0" style="font-size:12px;">
                     <i class="bi bi-exclamation-triangle"></i>
-                    <strong>Do not change</strong> <code>product_id</code> or <code>pattern_id</code> — they identify each record.
+                    <strong>Do not change</strong> <code>product_id</code> or <code>pattern_code</code> — they identify each record.
                     Unchanged rows are automatically ignored on upload.
                 </div>
             </div>
@@ -106,7 +106,7 @@
     <div class="col-md-6">
         <div class="card h-100">
             <div class="card-header bg-info text-white">
-                <strong><i class="bi bi-upload"></i> Step 2 — Upload Filled CSV / XLSX</strong>
+                <strong><i class="bi bi-upload"></i> Step 2 — Upload Filled CSV</strong>
             </div>
             <div class="card-body d-flex flex-column">
                 <p class="text-muted mb-3" style="font-size:13px;">
@@ -116,9 +116,9 @@
                 <form action="<?= base_url('products/bulkPreview') ?>" method="post" enctype="multipart/form-data" class="flex-grow-1 d-flex flex-column justify-content-between">
                     <?= csrf_field() ?>
                     <div>
-                        <label class="form-label fw-bold">Select CSV / XLSX File</label>
-                        <input type="file" name="csv_file" class="form-control" accept=".csv,.xlsx" required>
-                        <div class="form-text">Max 5 MB. Supports <code>.csv</code> (UTF-8) or <code>.xlsx</code>. Column order must match the template.</div>
+                        <label class="form-label fw-bold">Select CSV File</label>
+                        <input type="file" name="csv_file" class="form-control" accept=".csv" required>
+                        <div class="form-text">Max 5 MB. Save as <code>.csv</code> (UTF-8). Column order must match the template.</div>
                     </div>
                     <button type="submit" class="btn btn-info text-white mt-4">
                         <i class="bi bi-eye"></i> Preview Changes

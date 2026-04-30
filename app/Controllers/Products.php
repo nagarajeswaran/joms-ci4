@@ -943,7 +943,7 @@ class Products extends BaseController
         $rows = $this->db->query("
             SELECT p.id as product_id, p.sku as product_sku, p.name as product_name,
                    p.tamil_name as product_tamil_name, p.short_name as product_short_name,
-                   pp.id as pattern_id, COALESCE(pn.name,'Default') as pattern_name,
+                   pp.pattern_code, COALESCE(pn.name,'Default') as pattern_name,
                    pp.tamil_name as pattern_tamil_name, pp.short_name as pattern_short_name
             FROM product p
             JOIN product_pattern pp ON pp.product_id = p.id
@@ -964,12 +964,12 @@ class Products extends BaseController
         $out = fopen('php://output', 'w');
         fwrite($out, "\xEF\xBB\xBF");
         fputcsv($out, ['product_id','product_sku','product_name','product_tamil_name','product_short_name',
-                       'pattern_id','pattern_name','pattern_tamil_name','pattern_short_name']);
+                       'pattern_code','pattern_name','pattern_tamil_name','pattern_short_name']);
         foreach ($rows as $r) {
             fputcsv($out, [
                 $r['product_id'], $r['product_sku'], $r['product_name'],
                 $r['product_tamil_name'], $r['product_short_name'],
-                $r['pattern_id'], $r['pattern_name'],
+                $r['pattern_code'], $r['pattern_name'],
                 $r['pattern_tamil_name'], $r['pattern_short_name'],
             ]);
         }
@@ -985,8 +985,8 @@ class Products extends BaseController
             return redirect()->to('products/bulkEdit')->with('error', 'Please upload a valid file.');
         }
         $ext = strtolower($file->getClientExtension());
-        if (!in_array($ext, ['csv', 'xlsx'])) {
-            return redirect()->to('products/bulkEdit')->with('error', 'Only CSV and XLSX files are supported.');
+        if ($ext !== 'csv') {
+            return redirect()->to('products/bulkEdit')->with('error', 'Only CSV files are supported. Please save as .csv');
         }
         if ($file->getSize() > 5 * 1024 * 1024) {
             return redirect()->to('products/bulkEdit')->with('error', 'File too large (max 5 MB).');
@@ -995,32 +995,19 @@ class Products extends BaseController
         $tmpPath = $file->getTempName();
         $allRows = [];
 
-        if ($ext === 'xlsx') {
-            // Use PhpSpreadsheet for XLSX
-            if (file_exists(ROOTPATH . 'vendor/autoload.php')) {
-                require_once ROOTPATH . 'vendor/autoload.php';
-                $reader = new \PhpOffice\PhpSpreadsheet\Reader\Xlsx();
-                $spreadsheet = $reader->load($tmpPath);
-                $sheet = $spreadsheet->getActiveSheet();
-                $allRows = $sheet->toArray(null, true, true, false);
-            } else {
-                return redirect()->to('products/bulkEdit')->with('error', 'XLSX support not available. Please upload a CSV file.');
-            }
-        } else {
-            // Native CSV parsing
-            $handle = fopen($tmpPath, 'r');
-            if (!$handle) {
-                return redirect()->to('products/bulkEdit')->with('error', 'Failed to read uploaded file.');
-            }
-            // Skip BOM if present
-            $bom = fread($handle, 3);
-            if ($bom !== "\xEF\xBB\xBF") rewind($handle);
-
-            while (($row = fgetcsv($handle)) !== false) {
-                $allRows[] = $row;
-            }
-            fclose($handle);
+        // Native CSV parsing
+        $handle = fopen($tmpPath, 'r');
+        if (!$handle) {
+            return redirect()->to('products/bulkEdit')->with('error', 'Failed to read uploaded file.');
         }
+        // Skip BOM if present
+        $bom = fread($handle, 3);
+        if ($bom !== "\xEF\xBB\xBF") rewind($handle);
+
+        while (($row = fgetcsv($handle)) !== false) {
+            $allRows[] = $row;
+        }
+        fclose($handle);
 
         if (empty($allRows)) {
             return redirect()->to('products/bulkEdit')->with('error', 'The uploaded file is empty.');
@@ -1029,19 +1016,20 @@ class Products extends BaseController
         // Normalize header: trim whitespace and lowercase for flexible matching
         $header = array_map(function($v) { return strtolower(trim(str_replace("\xEF\xBB\xBF", '', (string)$v))); }, $allRows[0]);
         $expected = ['product_id','product_sku','product_name','product_tamil_name','product_short_name',
-                     'pattern_id','pattern_name','pattern_tamil_name','pattern_short_name'];
+                     'pattern_code','pattern_name','pattern_tamil_name','pattern_short_name'];
         if ($header !== $expected) {
-            return redirect()->to('products/bulkEdit')->with('error', 'Columns do not match the template. Expected: ' . implode(', ', $expected) . '. Got: ' . implode(', ', array_slice($header, 0, 9)));
+            return redirect()->to('products/bulkEdit')->with('error', 'Columns do not match the template. Expected: ' . implode(', ', $expected) . '<br>Got: ' . implode(', ', array_slice($header, 0, 9)) . '<br><strong>Please re-download the template from Step 1.</strong>');
         }
 
-        $products   = array_column($this->db->query('SELECT id, sku, name, tamil_name, short_name FROM product')->getResultArray(), null, 'id');
+        // Load current data
+        $products = array_column($this->db->query('SELECT id, sku, name, tamil_name, short_name FROM product')->getResultArray(), null, 'id');
         $patternRows = $this->db->query("
-            SELECT pp.id, pp.product_id, COALESCE(pn.name,'Default') as pattern_name,
+            SELECT pp.id, pp.product_id, pp.pattern_code, COALESCE(pn.name,'Default') as pattern_name,
                    pp.tamil_name, pp.short_name
             FROM product_pattern pp
             LEFT JOIN pattern_name pn ON pn.id = pp.pattern_name_id
         ")->getResultArray();
-        $patternMap = array_column($patternRows, null, 'id');
+        $patternByCode = array_column($patternRows, null, 'pattern_code');
 
         $changes = [];
         $errors  = [];
@@ -1051,14 +1039,20 @@ class Products extends BaseController
             $row = $allRows[$rowNum];
             $displayRow = $rowNum + 1;
             if (count($row) < 9) { $errors[] = "Row $displayRow: too few columns."; continue; }
-            $pid  = (int)$row[0];
-            $ptid = (int)$row[5];
-            if (!isset($products[$pid]))    { $errors[] = "Row $displayRow: product_id $pid not found.";  continue; }
-            if (!isset($patternMap[$ptid])) { $errors[] = "Row $displayRow: pattern_id $ptid not found."; continue; }
-            if ($patternMap[$ptid]['product_id'] != $pid) { $errors[] = "Row $displayRow: pattern $ptid does not belong to product $pid."; continue; }
 
-            $cur    = $products[$pid];
-            $curPat = $patternMap[$ptid];
+            $pid         = (int)$row[0];
+            $patternCode = trim((string)($row[5] ?? ''));
+
+            if (!isset($products[$pid])) { $errors[] = "Row $displayRow: product_id $pid not found."; continue; }
+            if ($patternCode === '' || !isset($patternByCode[$patternCode])) {
+                $errors[] = "Row $displayRow: pattern_code '$patternCode' not found."; continue;
+            }
+            $patData = $patternByCode[$patternCode];
+            if ((int)$patData['product_id'] !== $pid) {
+                $errors[] = "Row $displayRow: pattern_code '$patternCode' does not belong to product $pid."; continue;
+            }
+
+            $cur = $products[$pid];
 
             $newSku      = trim((string)($row[1] ?? ''));
             $newName     = trim((string)($row[2] ?? ''));
@@ -1072,9 +1066,9 @@ class Products extends BaseController
             $dbName     = trim((string)($cur['name']              ?? ''));
             $dbTamil    = trim((string)($cur['tamil_name']        ?? ''));
             $dbShort    = trim((string)($cur['short_name']        ?? ''));
-            $dbPatName  = trim((string)($curPat['pattern_name']   ?? ''));
-            $dbPatTamil = trim((string)($curPat['tamil_name']     ?? ''));
-            $dbPatShort = trim((string)($curPat['short_name']     ?? ''));
+            $dbPatName  = trim((string)($patData['pattern_name']  ?? ''));
+            $dbPatTamil = trim((string)($patData['tamil_name']    ?? ''));
+            $dbPatShort = trim((string)($patData['short_name']    ?? ''));
 
             $prodChanged = ($newSku   !== $dbSku)   ||
                            ($newName  !== $dbName)  ||
@@ -1088,6 +1082,8 @@ class Products extends BaseController
 
             $changes[] = [
                 'product_id'    => $pid,
+                'pattern_id'    => (int)$patData['id'],
+                'pattern_code'  => $patternCode,
                 'old_sku'       => $cur['sku']           ?? '',
                 'old_name'      => $cur['name']          ?? '',
                 'old_tamil'     => $cur['tamil_name']    ?? '',
@@ -1097,10 +1093,9 @@ class Products extends BaseController
                 'new_tamil'     => $newTamil,
                 'new_short'     => $newShort,
                 'prod_changed'  => $prodChanged,
-                'pattern_id'    => $ptid,
-                'old_pat_name'  => $curPat['pattern_name'] ?? '',
-                'old_pat_tamil' => $curPat['tamil_name']   ?? '',
-                'old_pat_short' => $curPat['short_name']   ?? '',
+                'old_pat_name'  => $patData['pattern_name'] ?? '',
+                'old_pat_tamil' => $patData['tamil_name']   ?? '',
+                'old_pat_short' => $patData['short_name']   ?? '',
                 'new_pat_name'  => $newPatName,
                 'new_pat_tamil' => $newPatTamil,
                 'new_pat_short' => $newPatShort,
@@ -1112,7 +1107,7 @@ class Products extends BaseController
             return redirect()->to('products/bulkEdit')->with('error', implode('<br>', array_slice($errors, 0, 10)));
         }
         if (empty($changes)) {
-            return redirect()->to('products/bulkEdit')->with('info', 'No changes detected in the uploaded CSV.');
+            return redirect()->to('products/bulkEdit')->with('info', 'No changes detected in the uploaded file.');
         }
 
         session()->set('bulk_changes', $changes);

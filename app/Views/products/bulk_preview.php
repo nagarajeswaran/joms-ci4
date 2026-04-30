@@ -48,7 +48,7 @@
                     }
                 ?>
                 <tr <?= $isNewProduct && $i > 0 ? 'style="border-top:2px solid #dee2e6;"' : '' ?>>
-                    <td class="text-muted" style="font-size:11px;"><?= $i + 1 ?><br><small class="text-muted">P<?= $ch['product_id'] ?> / PT<?= $ch['pattern_id'] ?></small></td>
+                    <td class="text-muted" style="font-size:11px;"><?= $i + 1 ?><br><small class="text-muted">P<?= $ch['product_id'] ?> / <?= esc($ch['pattern_code']) ?></small></td>
                     <?php if ($isNewProduct && $ch['prod_changed']): ?>
                         <?= $diffCell($ch['old_sku'],   $ch['new_sku']) ?>
                         <?= $diffCell($ch['old_name'],  $ch['new_name']) ?>
