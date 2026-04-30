@@ -979,6 +979,7 @@ class Products extends BaseController
 
     public function bulkPreview()
     {
+      try {
         $file = $this->request->getFile('csv_file');
         if (!$file || !$file->isValid()) {
             return redirect()->to('products/bulkEdit')->with('error', 'Please upload a valid file.');
@@ -992,35 +993,45 @@ class Products extends BaseController
         }
 
         $tmpPath = $file->getTempName();
+        $allRows = [];
 
-        // Read file using PhpSpreadsheet for both CSV and XLSX
-        require_once ROOTPATH . 'vendor/autoload.php';
-        if ($ext === 'csv') {
-            $reader = new \PhpOffice\PhpSpreadsheet\Reader\Csv();
-            $sample = file_get_contents($tmpPath, false, null, 0, 4096);
-            if (str_starts_with($sample, "\xEF\xBB\xBF")) {
-                $reader->setInputEncoding('UTF-8');
-            } elseif (mb_check_encoding($sample, 'UTF-8')) {
-                $reader->setInputEncoding('UTF-8');
+        if ($ext === 'xlsx') {
+            // Use PhpSpreadsheet for XLSX
+            if (file_exists(ROOTPATH . 'vendor/autoload.php')) {
+                require_once ROOTPATH . 'vendor/autoload.php';
+                $reader = new \PhpOffice\PhpSpreadsheet\Reader\Xlsx();
+                $spreadsheet = $reader->load($tmpPath);
+                $sheet = $spreadsheet->getActiveSheet();
+                $allRows = $sheet->toArray(null, true, true, false);
             } else {
-                $reader->setInputEncoding('Windows-1252');
+                return redirect()->to('products/bulkEdit')->with('error', 'XLSX support not available. Please upload a CSV file.');
             }
         } else {
-            $reader = new \PhpOffice\PhpSpreadsheet\Reader\Xlsx();
+            // Native CSV parsing
+            $handle = fopen($tmpPath, 'r');
+            if (!$handle) {
+                return redirect()->to('products/bulkEdit')->with('error', 'Failed to read uploaded file.');
+            }
+            // Skip BOM if present
+            $bom = fread($handle, 3);
+            if ($bom !== "\xEF\xBB\xBF") rewind($handle);
+
+            while (($row = fgetcsv($handle)) !== false) {
+                $allRows[] = $row;
+            }
+            fclose($handle);
         }
-        $spreadsheet = $reader->load($tmpPath);
-        $sheet       = $spreadsheet->getActiveSheet();
-        $allRows     = $sheet->toArray(null, true, true, false);
 
         if (empty($allRows)) {
             return redirect()->to('products/bulkEdit')->with('error', 'The uploaded file is empty.');
         }
 
-        $header = array_map('trim', array_map('strval', $allRows[0]));
+        // Normalize header: trim whitespace and lowercase for flexible matching
+        $header = array_map(function($v) { return strtolower(trim(str_replace("\xEF\xBB\xBF", '', (string)$v))); }, $allRows[0]);
         $expected = ['product_id','product_sku','product_name','product_tamil_name','product_short_name',
                      'pattern_id','pattern_name','pattern_tamil_name','pattern_short_name'];
         if ($header !== $expected) {
-            return redirect()->to('products/bulkEdit')->with('error', 'Columns do not match the template. Please re-download the template.');
+            return redirect()->to('products/bulkEdit')->with('error', 'Columns do not match the template. Expected: ' . implode(', ', $expected) . '. Got: ' . implode(', ', array_slice($header, 0, 9)));
         }
 
         $products   = array_column($this->db->query('SELECT id, sku, name, tamil_name, short_name FROM product')->getResultArray(), null, 'id');
@@ -1035,8 +1046,9 @@ class Products extends BaseController
         $changes = [];
         $errors  = [];
 
-        foreach ($allRows as $rowNum => $row) {
-            if ($rowNum === 0) continue; // skip header
+        $rowCount = count($allRows);
+        for ($rowNum = 1; $rowNum < $rowCount; $rowNum++) {
+            $row = $allRows[$rowNum];
             $displayRow = $rowNum + 1;
             if (count($row) < 9) { $errors[] = "Row $displayRow: too few columns."; continue; }
             $pid  = (int)$row[0];
@@ -1105,6 +1117,9 @@ class Products extends BaseController
 
         session()->set('bulk_changes', $changes);
         return view('products/bulk_preview', ['title' => 'Preview Changes', 'changes' => $changes]);
+      } catch (\Throwable $e) {
+        return redirect()->to('products/bulkEdit')->with('error', 'Error processing file: ' . $e->getMessage());
+      }
     }
 
     public function bulkConfirm()
