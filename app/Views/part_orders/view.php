@@ -5,8 +5,11 @@
         <h5 class="mb-0"><?= esc($po['order_number']) ?></h5>
         <small class="text-muted">Karigar: <strong><?= esc($po['karigar_name']) ?></strong><?= ($po['dept_name'] ?? '') ? ' ('.esc($po['dept_name']).')' : '' ?> | <?= $hasChargeRules ? '<span class="badge bg-info text-dark">Rules-based charges</span>' : 'Flat-rate charges' ?></small>
     </div>
-    <span class="badge <?= $po['status']==='posted'?'bg-success':'bg-warning text-dark' ?> fs-6"><?= ucfirst($po['status']) ?></span>
-    <button class="btn btn-sm btn-outline-primary" type="button" data-bs-toggle="collapse" data-bs-target="#allocPanel" id="allocToggleBtn">Manufacturing Plan ▼</button>
+    <div class="d-flex align-items-center gap-2">
+        <span class="badge <?= $po['status']==='posted'?'bg-success':'bg-warning text-dark' ?> fs-6"><?= ucfirst($po['status']) ?></span>
+        <button class="btn btn-sm btn-outline-primary" type="button" data-bs-toggle="collapse" data-bs-target="#allocPanel" id="allocToggleBtn">Manufacturing Plan ▼</button>
+        <a href="<?= base_url('part-orders') ?>" class="btn btn-secondary btn-sm"><i class="bi bi-arrow-left"></i> Back</a>
+    </div>
 </div>
 
 <!-- ISSUED -->

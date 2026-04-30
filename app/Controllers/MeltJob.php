@@ -57,6 +57,8 @@ class MeltJob extends BaseController
             'notes'              => $this->request->getPost('notes'),
             'required_touch_pct' => $this->request->getPost('required_touch_pct') ?: null,
             'required_weight_g'  => $this->request->getPost('required_weight_g') ?: null,
+            'created_by'         => $this->currentUser(),
+            'created_at'         => date('Y-m-d H:i:s'),
         ]);
         $jobId = $db->insertID();
 
@@ -237,6 +239,8 @@ class MeltJob extends BaseController
             'weight_g'    => $weight,
             'touch_pct'   => $touch,
             'fine_g'      => $fineG,
+            'created_by'  => $this->currentUser(),
+            'created_at'  => date('Y-m-d H:i:s'),
         ]);
         $inputRowId = $db->insertID();
 
@@ -252,6 +256,7 @@ class MeltJob extends BaseController
                 'ref_type'              => 'melt_job',
                 'ref_id'                => $inputRowId,
                 'notes'                 => 'Melt Job #' . $job['job_number'],
+                'created_by'            => $this->currentUser(),
                 'created_at'            => date('Y-m-d H:i:s'),
             ]);
         }
@@ -280,6 +285,7 @@ class MeltJob extends BaseController
                         'ref_type'              => 'melt_job',
                         'ref_id'                => $inputId,
                         'notes'                 => 'Reversed: Melt Job #' . $job['job_number'],
+                        'created_by'            => $this->currentUser(),
                         'created_at'            => date('Y-m-d H:i:s'),
                     ]);
                 }
@@ -311,6 +317,8 @@ class MeltJob extends BaseController
             'weight_g'          => $weight,
             'touch_pct'         => $touchPct,
             'batch_number'      => $batchNumber ?: null,
+            'created_by'        => $this->currentUser(),
+            'created_at'        => date('Y-m-d H:i:s'),
         ]);
         $recvRowId = $db->insertID();
 
@@ -322,6 +330,7 @@ class MeltJob extends BaseController
                 'touch_pct'    => $touchPct,
                 'batch_number' => $batchNumber ?: null,
                 'qty_issued_g' => 0,
+                'created_by'   => $this->currentUser(),
                 'created_at'   => date('Y-m-d H:i:s'),
             ]);
             $gsId = $db->insertID();
@@ -333,6 +342,7 @@ class MeltJob extends BaseController
                 'weight_g'       => $weight,
                 'touch_pct'      => $touchPct,
                 'notes'          => 'Received from Melt Job '.$job['job_number'],
+                'created_by'     => $this->currentUser(),
                 'created_at'     => date('Y-m-d H:i:s'),
             ]);
         } elseif ($receiveType === 'byproduct') {
@@ -343,6 +353,8 @@ class MeltJob extends BaseController
                 'touch_pct'         => $touchPct,
                 'source_job_type'   => 'melt',
                 'source_job_id'     => $id,
+                'created_by'        => $this->currentUser(),
+                'created_at'        => date('Y-m-d H:i:s'),
             ]);
             $bsId = $db->insertID();
             $db->table('melt_job_receive')->where('id', $recvRowId)->update(['byproduct_stock_id' => $bsId]);
@@ -420,6 +432,8 @@ class MeltJob extends BaseController
                 'direction'    => 'debit',
                 'amount'       => round($netFine, 4),
                 'narration'    => $narration,
+                'created_by'   => $this->currentUser(),
+                'created_at'   => date('Y-m-d H:i:s'),
             ]);
         }
 
@@ -432,6 +446,8 @@ class MeltJob extends BaseController
                 'direction'    => 'credit',
                 'amount'       => round($mcCash, 2),
                 'narration'    => $narration.' | Cash making charge',
+                'created_by'   => $this->currentUser(),
+                'created_at'   => date('Y-m-d H:i:s'),
             ]);
         }
 
@@ -563,6 +579,8 @@ class MeltJob extends BaseController
                 'weight_g'    => $w,
                 'touch_pct'   => $t,
                 'fine_g'      => $w * $t / 100,
+                'created_by'  => $this->currentUser(),
+                'created_at'  => date('Y-m-d H:i:s'),
             ]);
         }
     }

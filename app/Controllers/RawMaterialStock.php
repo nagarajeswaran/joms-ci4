@@ -43,6 +43,8 @@ class RawMaterialStock extends BaseController
             'weight_g'         => $this->request->getPost('weight_g'),
             'touch_pct'        => $touch,
             'notes'            => $this->request->getPost('notes'),
+            'created_by'       => $this->currentUser(),
+            'created_at'       => date('Y-m-d H:i:s'),
         ]);
         return redirect()->to('raw-materials')->with('success', 'Stock entry added');
     }

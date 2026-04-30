@@ -50,8 +50,8 @@ class Stock extends BaseController
 
         // INSERT IGNORE: if unique constraint fires (race), silently skip
         $this->db->query(
-            'INSERT IGNORE INTO qr_codes (qr_number, product_id, pattern_id, variation_id, qr_image, generated_at) VALUES (?,?,?,?,?,?)',
-            [$qrNumber, $productId, $patternId, $variationId, $b64, $now]
+            'INSERT IGNORE INTO qr_codes (qr_number, product_id, pattern_id, variation_id, qr_image, generated_at, created_by, created_at) VALUES (?,?,?,?,?,?,?,?)',
+            [$qrNumber, $productId, $patternId, $variationId, $b64, $now, $this->currentUser(), $now]
         );
 
         $this->db->transComplete();
@@ -237,13 +237,10 @@ class Stock extends BaseController
                     [$productId, $patternId, $vid, $locationId, $newQty, $now]
                 );
             }
-
-            if ($qty !== 0) {
-                $this->db->query(
-                    'INSERT INTO stock_transaction (type,product_id,pattern_id,variation_id,location_id,qty,note,created_by,created_at) VALUES (?,?,?,?,?,?,?,?,?)',
-                    [$txType, $productId, $patternId, $vid, $locationId, $qty, $note ?: 'Manual entry', 'system', $now]
-                );
-            }
+            $this->db->query(
+                'INSERT INTO stock_transaction (type,product_id,pattern_id,variation_id,location_id,qty,note,created_by,created_at) VALUES (?,?,?,?,?,?,?,?,?)',
+                [$txType, $productId, $patternId, $vid, $locationId, $qty, $note ?: 'Manual entry', $this->currentUser(), $now]
+            );
             $saved++;
         }
 
@@ -296,6 +293,8 @@ class Stock extends BaseController
                     'qty'          => 0,
                     'min_qty'      => $minQty,
                     'updated_at'   => date('Y-m-d H:i:s'),
+                    'created_by'   => $this->currentUser(),
+                    'created_at'   => date('Y-m-d H:i:s'),
                 ]);
             }
         }
@@ -478,7 +477,7 @@ class Stock extends BaseController
 
         $this->db->query(
             'INSERT INTO stock_transaction (type,product_id,pattern_id,variation_id,location_id,qty,note,created_by,created_at) VALUES (?,?,?,?,?,?,?,?,?)',
-            ['out', $productId, $patternId, $variationId, $locationId, $qty, 'QR scan sale', 'system', $now]
+            ['out', $productId, $patternId, $variationId, $locationId, $qty, 'QR scan sale', $this->currentUser(), $now]
         );
 
         return $this->response->setJSON(['success' => true, 'new_qty' => $currentQty - $qty]);
@@ -568,7 +567,7 @@ class Stock extends BaseController
         $now = date('Y-m-d H:i:s');
         $this->db->query(
             'INSERT INTO stock_transfer (from_location_id,to_location_id,note,created_by,created_at) VALUES (?,?,?,?,?)',
-            [$fromLoc, $toLoc, $note, 'system', $now]
+            [$fromLoc, $toLoc, $note, $this->currentUser(), $now]
         );
         $transferId = $this->db->insertID();
 
@@ -587,12 +586,12 @@ class Stock extends BaseController
 
             $tNote = "Transfer #$transferId";
             $this->db->query('INSERT INTO stock_transaction (type,product_id,pattern_id,variation_id,location_id,qty,ref_transfer_id,note,created_by,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)',
-                ['transfer_out', $it['pid'], $it['patid'], $it['vid'], $fromLoc, $it['qty'], $transferId, $tNote, 'system', $now]);
+                ['transfer_out', $it['pid'], $it['patid'], $it['vid'], $fromLoc, $it['qty'], $transferId, $tNote, $this->currentUser(), $now]);
             $this->db->query('INSERT INTO stock_transaction (type,product_id,pattern_id,variation_id,location_id,qty,ref_transfer_id,note,created_by,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)',
-                ['transfer_in', $it['pid'], $it['patid'], $it['vid'], $toLoc, $it['qty'], $transferId, $tNote, 'system', $now]);
+                ['transfer_in', $it['pid'], $it['patid'], $it['vid'], $toLoc, $it['qty'], $transferId, $tNote, $this->currentUser(), $now]);
 
-            $this->db->query('INSERT INTO stock_transfer_item (transfer_id,product_id,pattern_id,variation_id,qty) VALUES (?,?,?,?,?)',
-                [$transferId, $it['pid'], $it['patid'], $it['vid'], $it['qty']]);
+            $this->db->query('INSERT INTO stock_transfer_item (transfer_id,product_id,pattern_id,variation_id,qty,created_by,created_at) VALUES (?,?,?,?,?,?,?)',
+                [$transferId, $it['pid'], $it['patid'], $it['vid'], $it['qty'], $this->currentUser(), $now]);
         }
 
         return redirect()->to('stock')->with('success', 'Transfer #' . $transferId . ' completed: ' . count($items) . ' item(s) moved');
@@ -734,7 +733,7 @@ class Stock extends BaseController
             );
             $this->db->query(
                 'INSERT INTO stock_transaction (type,product_id,pattern_id,variation_id,location_id,qty,note,created_by,created_at) VALUES (?,?,?,?,?,?,?,?,?)',
-                ['out', $productId, $patternId, $variationId, $locationId, $qty, $noteText, 'system', $now]
+                ['out', $productId, $patternId, $variationId, $locationId, $qty, $noteText, $this->currentUser(), $now]
             );
             $deducted++;
         }

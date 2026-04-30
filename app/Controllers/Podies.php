@@ -32,6 +32,8 @@ class Podies extends BaseController
             'name' => $this->request->getPost('name'),
             'number' => $this->request->getPost('number'),
             'weight' => $this->request->getPost('weight'),
+            'created_by' => $this->currentUser(),
+            'created_at' => date('Y-m-d H:i:s'),
         ]);
         return redirect()->to('podies')->with('success', 'Podi added successfully');
     }

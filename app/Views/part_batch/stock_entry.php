@@ -8,7 +8,10 @@
 <div class="alert alert-danger alert-dismissible"><button type="button" class="btn-close" data-bs-dismiss="alert"></button><?= session()->getFlashdata('error') ?></div>
 <?php endif; ?>
 
-<h5 class="mb-3">Stock Entry</h5>
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h5 class="mb-0">Stock Entry</h5>
+    <a href="<?= base_url('part-stock') ?>" class="btn btn-secondary btn-sm"><i class="bi bi-arrow-left"></i> Back</a>
+</div>
 
 <!-- Batch lookup -->
 <div class="card mb-3" style="max-width:420px">

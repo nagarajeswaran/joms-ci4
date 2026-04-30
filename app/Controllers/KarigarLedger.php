@@ -90,6 +90,8 @@ class KarigarLedger extends BaseController
             'to_amount'    => round($toAmount, 4),
             'rate_per_kg'  => $rate,
             'notes'        => $notes,
+            'created_by'   => $this->currentUser(),
+            'created_at'   => date('Y-m-d H:i:s'),
         ]);
 
         // Debit from source
@@ -101,6 +103,8 @@ class KarigarLedger extends BaseController
             'direction'    => $fromAccount === 'fine' ? 'credit' : 'debit',
             'amount'       => $fromAmount,
             'narration'    => 'Conversion: '.ucfirst($fromAccount).' to '.ucfirst($toAccount).' @ Rs'.$rate.'/kg'.($notes ? ' | '.$notes : ''),
+            'created_by'   => $this->currentUser(),
+            'created_at'   => date('Y-m-d H:i:s'),
         ]);
 
         // Credit to destination
@@ -112,6 +116,8 @@ class KarigarLedger extends BaseController
             'direction'    => $toAccount === 'cash' ? 'credit' : 'debit',
             'amount'       => round($toAmount, 4),
             'narration'    => 'Conversion: '.ucfirst($fromAccount).' to '.ucfirst($toAccount).' @ Rs'.$rate.'/kg'.($notes ? ' | '.$notes : ''),
+            'created_by'   => $this->currentUser(),
+            'created_at'   => date('Y-m-d H:i:s'),
         ]);
 
         return redirect()->to('karigar-ledger/'.$karigarId)->with('success', 'Conversion posted');

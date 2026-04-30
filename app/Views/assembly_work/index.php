@@ -49,7 +49,13 @@
                 <td><?= number_format((float)($row['making_charge_cash'] ?? 0), 2) ?></td>
                 <td><?= number_format((float)($row['making_charge_fine'] ?? 0), 4) ?></td>
                 <td><?= date('d/m/Y', strtotime($row['created_at'])) ?></td>
-                <td><a href="<?= base_url('assembly-work/view/'.$row['id']) ?>" class="btn btn-sm btn-outline-primary">View</a></td>
+                <td class="text-nowrap">
+                    <a href="<?= base_url('assembly-work/view/'.$row['id']) ?>" class="btn btn-sm btn-outline-primary">View</a>
+                    <?php if (in_array($row['status'], ['finished', 'completed'], true)): ?>
+                    <a href="<?= base_url('assembly-work/reopen/'.$row['id']) ?>" class="btn btn-sm btn-outline-warning" onclick="return confirm('Reopen this work? Status will revert to In Progress.')">Reopen</a>
+                    <?php endif; ?>
+                    <a href="<?= base_url('assembly-work/delete/'.$row['id']) ?>" class="btn btn-sm btn-outline-danger" onclick="return confirm('DELETE this assembly work and all its issues/receives? Stock will be restored. This cannot be undone!')">Del</a>
+                </td>
             </tr>
             <?php endforeach; ?>
             <?php if (!$items): ?><tr><td colspan="7" class="text-center text-muted">No assembly work found</td></tr><?php endif; ?>

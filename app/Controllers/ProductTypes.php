@@ -48,6 +48,8 @@ class ProductTypes extends BaseController
             'tamil_name' => $this->request->getPost('tamil_name'),
             'variations' => is_array($variations) ? implode(',', $variations) : '',
             'multiplication_factor' => $this->request->getPost('multiplication_factor'),
+            'created_by' => $this->currentUser(),
+            'created_at' => date('Y-m-d H:i:s'),
         ]);
         return redirect()->to('product-types')->with('success', 'Product Type added successfully');
     }

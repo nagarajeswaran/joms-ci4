@@ -84,6 +84,7 @@ class GattiStock extends BaseController
                     'touch_pct'    => $touchPct,
                     'stamp_id'     => $stampId,
                     'qty_issued_g' => 0,
+                    'created_by'   => $this->currentUser(),
                     'created_at'   => date('Y-m-d H:i:s'),
                 ]);
             } catch (\Exception $e) {
@@ -117,6 +118,7 @@ class GattiStock extends BaseController
             'weight_g'       => $weightG,
             'touch_pct'      => $touchPct,
             'notes'          => $this->request->getPost('notes') ?: null,
+            'created_by'     => $this->currentUser(),
             'created_at'     => date('Y-m-d H:i:s'),
         ]);
 

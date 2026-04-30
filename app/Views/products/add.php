@@ -10,7 +10,7 @@
             <div class="row">
                 <div class="col-md-12">
                     <div id="form_messages"></div>
-                    <form id="add_product_form" method="post" enctype="multipart/form-data">
+                    <form id="add_product_form" method="post" enctype="multipart/form-data" data-turbo="false">
                         <?= csrf_field() ?>
                         
                         <!-- Basic Product Info -->

@@ -679,10 +679,12 @@ class Orders extends BaseController
     {
         $d = $this->request->getPost();
         $this->db->table('orders')->insert([
-            'title'     => trim($d['title'] ?? ''),
-            'client_id' => $d['client_id'] ?: null,
-            'notes'     => $d['notes'] ?? '',
-            'status'    => 'draft',
+            'title'      => trim($d['title'] ?? ''),
+            'client_id'  => $d['client_id'] ?: null,
+            'notes'      => $d['notes'] ?? '',
+            'status'     => 'draft',
+            'created_by' => $this->currentUser(),
+            'created_at' => date('Y-m-d H:i:s'),
         ]);
         $id = $this->db->insertID();
         $this->db->table('orders')->where('id', $id)->update(['order_number' => 'ORD-' . str_pad($id, 3, '0', STR_PAD_LEFT)]);
@@ -840,6 +842,8 @@ class Orders extends BaseController
                 'pattern_id' => $entry['pattern_id'] ?: null,
                 'stamp_id'   => $entry['stamp_id'] ?: null,
                 'sort_order' => $maxSort,
+                'created_by' => $this->currentUser(),
+                'created_at' => date('Y-m-d H:i:s'),
             ]);
             $itemId = $this->db->insertID();
             $qtys = $entry['qty'] ?? [];
@@ -850,6 +854,8 @@ class Orders extends BaseController
                         'order_item_id' => $itemId,
                         'variation_id'  => (int)$varId,
                         'quantity'      => $qty,
+                        'created_by'    => $this->currentUser(),
+                        'created_at'    => date('Y-m-d H:i:s'),
                     ]);
                 }
             }
@@ -902,6 +908,8 @@ class Orders extends BaseController
                     'order_item_id' => $itemId,
                     'variation_id'  => (int)$varId,
                     'quantity'      => (int)$qty,
+                    'created_by'    => $this->currentUser(),
+                    'created_at'    => date('Y-m-d H:i:s'),
                 ]);
             }
         }
@@ -933,6 +941,8 @@ class Orders extends BaseController
                     'order_item_id' => $itemId,
                     'variation_id'  => (int)$varId,
                     'quantity'      => $qty,
+                    'created_by'    => $this->currentUser(),
+                    'created_at'    => date('Y-m-d H:i:s'),
                 ]);
             }
         }
@@ -2682,7 +2692,7 @@ class Orders extends BaseController
         $q      = $this->request->getPost('q') ?? '';
         $typeId = $this->request->getPost('product_type_id') ?? '';
 
-        $sql    = 'SELECT p.id, p.name, p.sku, p.image, pt.name as type_name FROM product p LEFT JOIN product_type pt ON pt.id = p.product_type_id WHERE (p.name LIKE ? OR p.sku LIKE ?)';
+        $sql    = 'SELECT p.id, p.name, p.sku, p.image, pt.name as type_name, b.name as body_name FROM product p LEFT JOIN product_type pt ON pt.id = p.product_type_id LEFT JOIN body b ON b.id = p.body_id WHERE (p.name LIKE ? OR p.sku LIKE ?)';
         $params = ['%' . $q . '%', '%' . $q . '%'];
 
         if ($typeId) { $sql .= ' AND p.product_type_id = ?'; $params[] = $typeId; }
@@ -2859,7 +2869,7 @@ class Orders extends BaseController
             if ($existing) {
                 $this->db->table('order_touch')->where('id', $existing['id'])->update(['touch_value' => $tv]);
             } else {
-                $this->db->table('order_touch')->insert(['order_id' => $orderId, 'group_name' => $gn, 'touch_value' => $tv]);
+                $this->db->table('order_touch')->insert(['order_id' => $orderId, 'group_name' => $gn, 'touch_value' => $tv, 'created_by' => $this->currentUser(), 'created_at' => date('Y-m-d H:i:s')]);
             }
         }
 
@@ -2986,10 +2996,12 @@ class Orders extends BaseController
 
         // Create new blank order
         $this->db->table('orders')->insert([
-            'title'     => $newTitle,
-            'client_id' => $newClient,
-            'status'    => 'draft',
-            'notes'     => 'Merged from: ' . implode(', ', array_map(fn($oid) => 'ORD-' . str_pad($oid, 3, '0', STR_PAD_LEFT), $orderIds)),
+            'title'      => $newTitle,
+            'client_id'  => $newClient,
+            'status'     => 'draft',
+            'notes'      => 'Merged from: ' . implode(', ', array_map(fn($oid) => 'ORD-' . str_pad($oid, 3, '0', STR_PAD_LEFT), $orderIds)),
+            'created_by' => $this->currentUser(),
+            'created_at' => date('Y-m-d H:i:s'),
         ]);
         $newId = $this->db->insertID();
         $this->db->table('orders')->where('id', $newId)->update(['order_number' => 'ORD-' . str_pad($newId, 3, '0', STR_PAD_LEFT)]);
@@ -3002,6 +3014,8 @@ class Orders extends BaseController
                     'order_id'   => $newId,
                     'product_id' => $item['product_id'],
                     'pattern_id' => $item['pattern_id'],
+                    'created_by' => $this->currentUser(),
+                    'created_at' => date('Y-m-d H:i:s'),
                 ]);
                 $newItemId = $this->db->insertID();
 
@@ -3011,6 +3025,8 @@ class Orders extends BaseController
                         'order_item_id' => $newItemId,
                         'variation_id'  => $q['variation_id'],
                         'quantity'      => $q['quantity'],
+                        'created_by'    => $this->currentUser(),
+                        'created_at'    => date('Y-m-d H:i:s'),
                     ]);
                 }
             }
@@ -3028,6 +3044,8 @@ class Orders extends BaseController
                         'part_id'         => $s['part_id'],
                         'kanni_per_inch'  => $s['kanni_per_inch'],
                         'weight_per_kanni'=> $s['weight_per_kanni'],
+                        'created_by'      => $this->currentUser(),
+                        'created_at'      => date('Y-m-d H:i:s'),
                     ]);
                 }
             }
@@ -3045,10 +3063,12 @@ class Orders extends BaseController
     private function _createOrderCopy($sourceOrder, $newTitle, $newClientId, $itemIds)
     {
         $this->db->table('orders')->insert([
-            'title'     => $newTitle,
-            'client_id' => $newClientId ?? ($sourceOrder['client_id'] ?? null),
-            'notes'     => $sourceOrder['notes'] ?? '',
-            'status'    => 'draft',
+            'title'      => $newTitle,
+            'client_id'  => $newClientId ?? ($sourceOrder['client_id'] ?? null),
+            'notes'      => $sourceOrder['notes'] ?? '',
+            'status'     => 'draft',
+            'created_by' => $this->currentUser(),
+            'created_at' => date('Y-m-d H:i:s'),
         ]);
         $newId = $this->db->insertID();
         $this->db->table('orders')->where('id', $newId)->update(['order_number' => 'ORD-' . str_pad($newId, 3, '0', STR_PAD_LEFT)]);
@@ -3060,6 +3080,8 @@ class Orders extends BaseController
                 'order_id'   => $newId,
                 'product_id' => $item['product_id'],
                 'pattern_id' => $item['pattern_id'],
+                'created_by' => $this->currentUser(),
+                'created_at' => date('Y-m-d H:i:s'),
             ]);
             $newItemId = $this->db->insertID();
             $qtys = $this->db->query('SELECT * FROM order_item_qty WHERE order_item_id = ?', [(int)$itemId])->getResultArray();
@@ -3068,6 +3090,8 @@ class Orders extends BaseController
                     'order_item_id' => $newItemId,
                     'variation_id'  => $q['variation_id'],
                     'quantity'      => $q['quantity'],
+                    'created_by'    => $this->currentUser(),
+                    'created_at'    => date('Y-m-d H:i:s'),
                 ]);
             }
         }
@@ -3080,6 +3104,8 @@ class Orders extends BaseController
                 'part_id'          => $s['part_id'],
                 'kanni_per_inch'   => $s['kanni_per_inch'],
                 'weight_per_kanni' => $s['weight_per_kanni'],
+                'created_by'       => $this->currentUser(),
+                'created_at'       => date('Y-m-d H:i:s'),
             ]);
         }
 
@@ -3102,9 +3128,11 @@ class Orders extends BaseController
         }
 
         $this->db->table('orders')->insert([
-            'title'  => 'Restock - ' . date('d/m/Y'),
-            'status' => 'draft',
-            'notes'  => 'Auto-generated from Low Stock alert',
+            'title'      => 'Restock - ' . date('d/m/Y'),
+            'status'     => 'draft',
+            'notes'      => 'Auto-generated from Low Stock alert',
+            'created_by' => $this->currentUser(),
+            'created_at' => date('Y-m-d H:i:s'),
         ]);
         $orderId = $this->db->insertID();
         $this->db->table('orders')->where('id', $orderId)->update(['order_number' => 'ORD-' . str_pad($orderId, 3, '0', STR_PAD_LEFT)]);
@@ -3126,6 +3154,8 @@ class Orders extends BaseController
                 'order_id'   => $orderId,
                 'product_id' => $g['product_id'],
                 'pattern_id' => $g['pattern_id'],
+                'created_by' => $this->currentUser(),
+                'created_at' => date('Y-m-d H:i:s'),
             ]);
             $orderItemId = $this->db->insertID();
 
@@ -3134,6 +3164,8 @@ class Orders extends BaseController
                     'order_item_id' => $orderItemId,
                     'variation_id'  => $v['variation_id'],
                     'quantity'      => $v['qty'],
+                    'created_by'    => $this->currentUser(),
+                    'created_at'    => date('Y-m-d H:i:s'),
                 ]);
             }
         }

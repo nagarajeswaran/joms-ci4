@@ -2,7 +2,11 @@
 <?= $this->section('content') ?>
 <div class="d-flex justify-content-between align-items-center mb-3">
     <h5 class="mb-0"><i class="bi bi-collection"></i> Batch: <?= esc($batch['batch_number']) ?></h5>
-    <a href="<?= base_url('raw-material-batches') ?>" class="btn btn-secondary btn-sm"><i class="bi bi-arrow-left"></i> Back</a>
+    <div>
+        <a href="<?= base_url('raw-material-batches/edit/'.$batch['id']) ?>" class="btn btn-outline-secondary btn-sm"><i class="bi bi-pencil"></i> Edit</a>
+        <a href="<?= base_url('raw-material-batches/delete/'.$batch['id']) ?>" class="btn btn-outline-danger btn-sm" onclick="return confirm('Delete batch <?= esc($batch['batch_number']) ?>? This will also delete its transaction logs.')"><i class="bi bi-trash"></i> Delete</a>
+        <a href="<?= base_url('raw-material-batches') ?>" class="btn btn-secondary btn-sm"><i class="bi bi-arrow-left"></i> Back</a>
+    </div>
 </div>
 
 <div class="row mb-4">

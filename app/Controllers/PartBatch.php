@@ -125,6 +125,7 @@ class PartBatch extends BaseController
             'touch_pct'      => (float)($this->request->getPost('touch_pct') ?? 0),
             'stamp_id'       => $stampId,
             'notes'          => $this->request->getPost('notes') ?: null,
+            'created_by'     => $this->currentUser(),
             'created_at'     => date('Y-m-d H:i:s'),
         ]);
 
@@ -190,6 +191,7 @@ class PartBatch extends BaseController
                     'part_id'      => $partId ?: null,
                     'touch_pct'    => 0,
                     'qty_in_stock' => 0,
+                    'created_by'   => $this->currentUser(),
                     'created_at'   => date('Y-m-d H:i:s'),
                 ]);
                 $batchId = $db->insertID();
@@ -382,6 +384,7 @@ class PartBatch extends BaseController
                     'touch_pct'        => (float)($this->request->getPost('touch_pct') ?? 0),
                     'weight_in_stock_g'=> 0,
                     'qty_in_stock'     => 0,
+                    'created_by'       => $this->currentUser(),
                     'created_at'       => date('Y-m-d H:i:s'),
                 ]);
             } catch (\Exception $e) {
@@ -424,6 +427,7 @@ class PartBatch extends BaseController
             'touch_pct'      => (float)($this->request->getPost('touch_pct') ?? 0),
             'stamp_id'       => $stampId,
             'notes'          => $this->request->getPost('notes') ?: null,
+            'created_by'     => $this->currentUser(),
             'created_at'     => date('Y-m-d H:i:s'),
         ]);
 
@@ -567,6 +571,7 @@ class PartBatch extends BaseController
                             'department_id' => $defaultDeptId,
                             'gatti'         => 0,
                             'image'         => '',
+                            'created_by'    => $this->currentUser(),
                             'created_at'    => date('Y-m-d H:i:s'),
                             'updated_at'    => date('Y-m-d H:i:s'),
                         ]);
@@ -583,6 +588,7 @@ class PartBatch extends BaseController
                 'piece_weight_g'     => $row['pieceWeightG'] ?: null,
                 'touch_pct'          => $row['touchPct'],
                 'stamp_id'           => $row['stampId'] ?? null,
+                'created_by'         => $this->currentUser(),
                 'created_at'         => $row['date'],
             ]);
             $batchId = $db->insertID();
@@ -595,6 +601,7 @@ class PartBatch extends BaseController
                 'piece_weight_g'=> $row['pieceWeightG'] ?: null,
                 'touch_pct'     => $row['touchPct'] ?: null,
                 'stamp_id'      => $row['stampId'] ?? null,
+                'created_by'    => $this->currentUser(),
                 'created_at'    => $row['date'],
             ]);
             $imported++;

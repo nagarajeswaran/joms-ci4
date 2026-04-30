@@ -30,6 +30,8 @@ class Clients extends BaseController
     {
         $this->model->insert([
             'name' => $this->request->getPost('name'),
+            'created_by' => $this->currentUser(),
+            'created_at' => date('Y-m-d H:i:s'),
         ]);
         return redirect()->to('clients')->with('success', 'Client added successfully');
     }

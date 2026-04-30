@@ -5,7 +5,10 @@
         <h5 class="mb-0"><?= esc($karigar['name']) ?></h5>
         <small class="text-muted"><?= esc($karigar['dept_name'] ?? '') ?></small>
     </div>
-    <a href="<?= base_url('karigar-ledger/'.$karigar['id'].'/convert') ?>" class="btn btn-outline-secondary btn-sm">Fine &harr; Cash</a>
+    <div class="d-flex gap-2">
+        <a href="<?= base_url('karigar-ledger/'.$karigar['id'].'/convert') ?>" class="btn btn-outline-secondary btn-sm">Fine &harr; Cash</a>
+        <a href="<?= base_url('karigar-ledger') ?>" class="btn btn-secondary btn-sm"><i class="bi bi-arrow-left"></i> Back</a>
+    </div>
 </div>
 
 <div class="row mb-3">

@@ -76,7 +76,11 @@
     <td class="text-end"><?= number_format($row['weight_in_stock_g'], 4) ?></td>
     <td class="text-end"><?= $row['touch_pct'] ?>%</td>
     <td class="text-end"><?= number_format((float)$row['weight_in_stock_g'] * (float)$row['touch_pct'] / 100, 4) ?></td>
-    <td><a href="<?= base_url('raw-material-batches/view/'.$row['id']) ?>" class="btn btn-sm btn-outline-primary">View</a></td>
+    <td>
+        <a href="<?= base_url('raw-material-batches/view/'.$row['id']) ?>" class="btn btn-sm btn-outline-primary"><i class="bi bi-eye"></i></a>
+        <a href="<?= base_url('raw-material-batches/edit/'.$row['id']) ?>" class="btn btn-sm btn-outline-secondary"><i class="bi bi-pencil"></i></a>
+        <a href="<?= base_url('raw-material-batches/delete/'.$row['id']) ?>" class="btn btn-sm btn-outline-danger" onclick="return confirm('Delete batch <?= esc($row['batch_number']) ?>?')"><i class="bi bi-trash"></i></a>
+    </td>
 </tr>
 <?php endforeach; ?>
 <?php if (!$batches): ?><tr><td colspan="8" class="text-center text-muted">No batches found</td></tr><?php endif; ?>

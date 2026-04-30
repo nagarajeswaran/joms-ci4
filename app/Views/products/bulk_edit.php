@@ -1,6 +1,7 @@
 <?php $this->extend('layouts/main') ?>
 <?php $this->section('content') ?>
 
+<!-- v2024-build5 -->
 <div class="d-flex justify-content-between align-items-center mb-3">
     <h5 class="mb-0"><i class="bi bi-file-earmark-spreadsheet text-success"></i> Bulk Update Products</h5>
     <a href="<?= base_url('products') ?>" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left"></i> Back to Products</a>

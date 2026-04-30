@@ -27,6 +27,8 @@ class RawMaterialType extends BaseController
             'default_touch_pct' => $this->request->getPost('default_touch_pct') ?: 0,
             'material_group'    => $this->request->getPost('material_group') ?: 'other',
             'is_default_alloy'  => $isDefaultAlloy,
+            'created_by'        => $this->currentUser(),
+            'created_at'        => date('Y-m-d H:i:s'),
         ]);
         return redirect()->to('raw-material-types')->with('success', 'Added');
     }

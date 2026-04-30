@@ -56,6 +56,8 @@ class PartOrder extends BaseController
             'cash_rate_per_kg' => 0,
             'fine_pct'         => 0,
             'notes'            => $this->request->getPost('notes'),
+            'created_by'       => $this->currentUser(),
+            'created_at'       => date('Y-m-d H:i:s'),
         ]);
         return redirect()->to('part-orders/view/' . $db->insertID())->with('success', 'Part order created');
     }
@@ -236,6 +238,8 @@ class PartOrder extends BaseController
                 'weight_g'         => (float)($weights[$i] ?? 0),
                 'fine_pct'         => (float)($fines[$i] ?? 0),
                 'cash_rate_per_kg' => (float)($cashRates[$i] ?? 0),
+                'created_by'       => $this->currentUser(),
+                'created_at'       => date('Y-m-d H:i:s'),
             ]);
         }
 
@@ -297,6 +301,8 @@ class PartOrder extends BaseController
             $db->table('part_order_allocation')->where('id', $allocId)->where('part_order_id', $poId)->update($data);
             $msg = 'Allocation updated';
         } else {
+            $data['created_by'] = $this->currentUser();
+            $data['created_at'] = date('Y-m-d H:i:s');
             $db->table('part_order_allocation')->insert($data);
             $msg = 'Allocation added';
         }
@@ -440,6 +446,8 @@ class PartOrder extends BaseController
                 'touch_pct'     => $batch['touch_pct'],
                 'stamp_id'      => null,
                 'issued_at'     => date('Y-m-d H:i:s'),
+                'created_by'    => $this->currentUser(),
+                'created_at'    => date('Y-m-d H:i:s'),
             ]);
             $db->query('UPDATE part_batch SET weight_in_stock_g = GREATEST(0, weight_in_stock_g - ?) WHERE id = ?', [$weight, $partBatchId]);
         } else {
@@ -458,6 +466,8 @@ class PartOrder extends BaseController
                 'touch_pct'      => $gatti['touch_pct'],
                 'stamp_id'       => $this->request->getPost('stamp_id') ?: null,
                 'issued_at'      => date('Y-m-d H:i:s'),
+                'created_by'     => $this->currentUser(),
+                'created_at'     => date('Y-m-d H:i:s'),
             ]);
             $db->query('UPDATE gatti_stock SET qty_issued_g = qty_issued_g + ? WHERE id = ?', [$weight, $gattiId]);
         }
@@ -523,6 +533,8 @@ class PartOrder extends BaseController
                 'touch_pct'         => $touch,
                 'stamp_id'          => $this->request->getPost('stamp_id') ?: null,
                 'received_at'       => date('Y-m-d H:i:s'),
+                'created_by'        => $this->currentUser(),
+                'created_at'        => date('Y-m-d H:i:s'),
             ]);
             $db->table('byproduct_stock')->insert([
                 'byproduct_type_id' => $byprodTypeId,
@@ -530,6 +542,8 @@ class PartOrder extends BaseController
                 'touch_pct'         => $touch,
                 'source_job_type'   => 'partorder',
                 'source_job_id'     => $id,
+                'created_by'        => $this->currentUser(),
+                'created_at'        => date('Y-m-d H:i:s'),
             ]);
         }
 
@@ -678,6 +692,8 @@ class PartOrder extends BaseController
                 'direction'    => $netFine > 0 ? 'debit' : 'credit',
                 'amount'       => round(abs($netFine), 4),
                 'narration'    => $narration,
+                'created_by'   => $this->currentUser(),
+                'created_at'   => date('Y-m-d H:i:s'),
             ]);
         }
 
@@ -690,6 +706,8 @@ class PartOrder extends BaseController
                 'direction'    => 'credit',
                 'amount'       => round($totalMcCash, 2),
                 'narration'    => $narration.' | Cash making charge',
+                'created_by'   => $this->currentUser(),
+                'created_at'   => date('Y-m-d H:i:s'),
             ]);
         }
 
@@ -795,6 +813,8 @@ class PartOrder extends BaseController
                     'weight_in_stock_g'    => $weight,
                     'source_part_order_id' => $partOrderId,
                     'received_at'          => date('Y-m-d H:i:s'),
+                    'created_by'           => $this->currentUser(),
+                    'created_at'           => date('Y-m-d H:i:s'),
                 ]);
                 $partBatchId = $db->insertID();
             }
@@ -812,6 +832,8 @@ class PartOrder extends BaseController
             'touch_pct'      => $touch,
             'stamp_id'       => $stampId,
             'received_at'    => date('Y-m-d H:i:s'),
+            'created_by'     => $this->currentUser(),
+            'created_at'     => date('Y-m-d H:i:s'),
         ]);
 
         return (int)$db->insertID();

@@ -1,6 +1,9 @@
 <?= $this->extend('layouts/main') ?>
 <?= $this->section('content') ?>
-<h5 class="mb-3">Scan Batch Barcode</h5>
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h5 class="mb-0">Scan Batch Barcode</h5>
+    <a href="<?= base_url('part-stock') ?>" class="btn btn-secondary btn-sm"><i class="bi bi-arrow-left"></i> Back</a>
+</div>
 <div class="card" style="max-width:450px">
 <div class="card-body">
 <div id="reader" style="width:100%;max-width:400px;margin:0 auto"></div>
@@ -9,7 +12,7 @@
 </div>
 <?= $this->endSection() ?>
 <?= $this->section('scripts') ?>
-<script src="https://cdn.jsdelivr.net/npm/@zxing/browser@0.1.4/umd/index.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@zxing/browser@0.1.4/umd/index.min.js" data-turbo-track="reload"></script>
 <script>
 (function() {
     var codeReader = new ZXingBrowser.BrowserMultiFormatReader();

@@ -982,11 +982,11 @@ class Products extends BaseController
       try {
         $file = $this->request->getFile('csv_file');
         if (!$file || !$file->isValid()) {
-            return redirect()->to('products/bulkEdit')->with('error', 'Please upload a valid file.');
+            return redirect()->to('products/bulkEdit')->with('error', 'Please upload a valid file. (File missing or invalid)');
         }
         $ext = strtolower($file->getClientExtension());
         if ($ext !== 'csv') {
-            return redirect()->to('products/bulkEdit')->with('error', 'Only CSV files are supported. Please save as .csv');
+            return redirect()->to('products/bulkEdit')->with('error', 'Only CSV files are supported. You uploaded: .' . esc($ext));
         }
         if ($file->getSize() > 5 * 1024 * 1024) {
             return redirect()->to('products/bulkEdit')->with('error', 'File too large (max 5 MB).');

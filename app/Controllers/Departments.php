@@ -40,6 +40,8 @@ class Departments extends BaseController
             'tamil_name' => $this->request->getPost('tamil_name'),
             'wastage' => $this->request->getPost('wastage'),
             'department_group_id' => $this->request->getPost('department_group_id'),
+            'created_by' => $this->currentUser(),
+            'created_at' => date('Y-m-d H:i:s'),
         ]);
         return redirect()->to('departments')->with('success', 'Department added successfully');
     }
@@ -70,7 +72,7 @@ class Departments extends BaseController
         $db = \Config\Database::connect();
         $name = $this->request->getPost('name');
         if ($name) {
-            $db->query("INSERT INTO department_group (name, created_at, updated_at) VALUES (?, NOW(), NOW())", [$name]);
+            $db->query("INSERT INTO department_group (name, created_by, created_at, updated_at) VALUES (?, ?, NOW(), NOW())", [$name, $this->currentUser()]);
         }
         return redirect()->to('departments')->with('success', 'Group added successfully');
     }

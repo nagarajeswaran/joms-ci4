@@ -2,7 +2,10 @@
 <?= $this->section('content') ?>
 <div class="d-flex justify-content-between align-items-center mb-3">
 <h5 class="mb-0">Generate Batch Labels</h5>
-<a href="<?= base_url('part-stock/serial-settings') ?>" class="btn btn-outline-secondary btn-sm"><i class="bi bi-gear"></i> Serial Settings</a>
+<div class="d-flex gap-2">
+    <a href="<?= base_url('part-stock/serial-settings') ?>" class="btn btn-outline-secondary btn-sm"><i class="bi bi-gear"></i> Serial Settings</a>
+    <a href="<?= base_url('part-stock') ?>" class="btn btn-secondary btn-sm"><i class="bi bi-arrow-left"></i> Back</a>
+</div>
 </div>
 <div class="row">
 <div class="col-md-5">
@@ -37,7 +40,7 @@
 
 <?= $this->endSection() ?>
 <?= $this->section('scripts') ?>
-<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js" data-turbo-track="reload"></script>
 <script>
 var rowIdx = 0;
 var generatedBatches = [];

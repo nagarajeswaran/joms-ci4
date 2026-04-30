@@ -90,6 +90,8 @@ class RawMaterialBatch extends BaseController
             'material_type_id'   => $typeId,
             'weight_in_stock_g'  => $weight,
             'touch_pct'          => $touch,
+            'created_by'         => $this->currentUser(),
+            'created_at'         => date('Y-m-d H:i:s'),
         ]);
         $batchId = $db->insertID();
 
@@ -100,6 +102,7 @@ class RawMaterialBatch extends BaseController
             'touch_pct'             => $touch,
             'reason'                => 'initial_stock',
             'notes'                 => 'Initial batch entry',
+            'created_by'            => $this->currentUser(),
             'created_at'            => date('Y-m-d H:i:s'),
         ]);
 
@@ -125,10 +128,67 @@ class RawMaterialBatch extends BaseController
             'touch_pct'             => $touch,
             'reason'                => 'stock_added',
             'notes'                 => $notes,
+            'created_by'            => $this->currentUser(),
             'created_at'            => date('Y-m-d H:i:s'),
         ]);
 
         return redirect()->to('raw-material-batches/view/' . $id)->with('success', 'Stock added');
+    }
+
+    public function edit($id)
+    {
+        $db    = \Config\Database::connect();
+        $batch = $db->query('SELECT * FROM raw_material_batch WHERE id = ?', [$id])->getRowArray();
+        if (!$batch) return redirect()->to('raw-material-batches')->with('error', 'Batch not found');
+
+        $types = $db->query('SELECT * FROM raw_material_type ORDER BY name')->getResultArray();
+        return view('raw_material_batch/form', [
+            'title' => 'Edit Raw Material Batch',
+            'types' => $types,
+            'batch' => $batch,
+        ]);
+    }
+
+    public function update($id)
+    {
+        $db    = \Config\Database::connect();
+        $batch = $db->query('SELECT * FROM raw_material_batch WHERE id = ?', [$id])->getRowArray();
+        if (!$batch) return redirect()->to('raw-material-batches')->with('error', 'Batch not found');
+
+        $batchNum = trim($this->request->getPost('batch_number'));
+        $typeId   = $this->request->getPost('material_type_id');
+        $touch    = $this->request->getPost('touch_pct');
+
+        $dup = $db->query('SELECT id FROM raw_material_batch WHERE batch_number = ? AND id != ?', [$batchNum, $id])->getRowArray();
+        if ($dup) return redirect()->back()->with('error', 'Batch number already exists');
+
+        if (!$touch) {
+            $row   = $db->query('SELECT default_touch_pct FROM raw_material_type WHERE id = ?', [$typeId])->getRowArray();
+            $touch = $row['default_touch_pct'] ?? 0;
+        }
+
+        $db->query('UPDATE raw_material_batch SET batch_number = ?, material_type_id = ?, touch_pct = ? WHERE id = ?', [
+            $batchNum, $typeId, $touch, $id
+        ]);
+
+        return redirect()->to('raw-material-batches/view/' . $id)->with('success', 'Batch updated');
+    }
+
+    public function delete($id)
+    {
+        $db    = \Config\Database::connect();
+        $batch = $db->query('SELECT * FROM raw_material_batch WHERE id = ?', [$id])->getRowArray();
+        if (!$batch) return redirect()->to('raw-material-batches')->with('error', 'Batch not found');
+
+        $used = $db->query("SELECT COUNT(*) as cnt FROM melt_job_input WHERE input_type = 'raw_material' AND item_id = ?", [$id])->getRowArray();
+        if ((int)$used['cnt'] > 0) {
+            return redirect()->to('raw-material-batches/view/' . $id)->with('error', 'Cannot delete — batch used in melt jobs');
+        }
+
+        $db->query('DELETE FROM raw_material_batch_log WHERE raw_material_batch_id = ?', [$id]);
+        $db->query('DELETE FROM raw_material_batch WHERE id = ?', [$id]);
+
+        return redirect()->to('raw-material-batches')->with('success', 'Batch deleted');
     }
 
     public function entry()

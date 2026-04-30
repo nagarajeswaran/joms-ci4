@@ -74,6 +74,8 @@ class Templates extends BaseController
             'tamil_name' => $data['tamil_name'] ?? '',
             'description' => $data['description'] ?? '',
             'product_type_id' => !empty($data['product_type_id']) ? (int)$data['product_type_id'] : null,
+            'created_by' => $this->currentUser(),
+            'created_at' => date('Y-m-d H:i:s'),
         ]);
         $templateId = $this->db->insertID();
 
@@ -199,6 +201,8 @@ class Templates extends BaseController
                     'variation_group' => $vg,
                     'podi_id' => $data['bom_podi_id'][$i] ?: null,
                     'podi_pcs' => $data['bom_podi_pcs'][$i] ?? null,
+                    'created_by' => $this->currentUser(),
+                    'created_at' => date('Y-m-d H:i:s'),
                 ]);
             }
         }
@@ -212,6 +216,8 @@ class Templates extends BaseController
                     'type' => 'cbom',
                     'part_id' => $partId,
                     'podi_id' => $data['cbom_podi_id'][$i] ?: null,
+                    'created_by' => $this->currentUser(),
+                    'created_at' => date('Y-m-d H:i:s'),
                 ]);
                 $itemId = $this->db->insertID();
                 foreach ($allVids as $vid) {
@@ -225,6 +231,8 @@ class Templates extends BaseController
                             'variation_id' => $vid,
                             'part_quantity' => $pq ?: 0,
                             'podi_quantity' => $dq ?: 0,
+                            'created_by' => $this->currentUser(),
+                            'created_at' => date('Y-m-d H:i:s'),
                         ]);
                     }
                 }

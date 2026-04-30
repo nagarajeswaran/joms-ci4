@@ -27,6 +27,8 @@ class Karigar extends BaseController
             'default_cash_rate' => $this->request->getPost('default_cash_rate') ?: 0,
             'default_fine_pct'  => $this->request->getPost('default_fine_pct') ?: 0,
             'notes'             => $this->request->getPost('notes'),
+            'created_by'        => $this->currentUser(),
+            'created_at'        => date('Y-m-d H:i:s'),
         ]);
         $newId = $db->insertID();
         return redirect()->to('karigar/edit/' . $newId)->with('success', 'Karigar added. You can now add making charge rules below.');
@@ -108,6 +110,8 @@ class Karigar extends BaseController
             'fine_pct'         => $this->request->getPost('fine_pct') ?: 0,
             'cash_rate_per_kg' => $this->request->getPost('cash_rate_per_kg') ?: 0,
             'notes'            => $this->request->getPost('notes'),
+            'created_by'       => $this->currentUser(),
+            'created_at'       => date('Y-m-d H:i:s'),
         ]);
         return redirect()->to('karigar/edit/'.$karigarId)->with('success', 'Charge rule added');
     }

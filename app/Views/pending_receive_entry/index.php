@@ -2,7 +2,7 @@
 <?= $this->section('content') ?>
 <div class="d-flex justify-content-between align-items-center mb-3">
     <h5 class="mb-0">Pending Receive Entry</h5>
-    <a href="<?= base_url('part-orders') ?>" class="btn btn-outline-secondary btn-sm">Part Orders</a>
+    <a href="<?= base_url('part-orders') ?>" class="btn btn-secondary btn-sm"><i class="bi bi-arrow-left"></i> Back</a>
 </div>
 
 <?php if (!empty($tableMissing)): ?>

@@ -6,6 +6,8 @@
     <title><?= $title ?? 'JOMS - Job Order Management System' ?></title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet">
+    <meta name="turbo-cache-control" content="no-cache">
+    <script src="https://cdn.jsdelivr.net/npm/@hotwired/turbo@8.0.12/dist/turbo.es2017-umd.js" defer></script>
     <style>
         body { background: #f4f6f9; font-family: 'Segoe UI', sans-serif; }
 
@@ -189,12 +191,12 @@
         ];
     ?>
     <!-- Toggle button shown when sidebar is hidden -->
-    <button class="sidebar-toggle" id="sidebarToggle" title="Open menu">
+    <button class="sidebar-toggle" id="sidebarToggle" data-turbo-permanent title="Open menu">
         <i class="bi bi-list"></i>
     </button>
-    <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
+    <div class="sidebar-backdrop" id="sidebarBackdrop" data-turbo-permanent></div>
 
-    <div class="sidebar" id="sidebar">
+    <div class="sidebar" id="sidebar" data-turbo-permanent>
         <div class="sidebar-header">
             <h4><i class="bi bi-gem"></i> JOMS</h4>
             <button class="sidebar-close" id="sidebarClose" title="Hide sidebar">
@@ -227,7 +229,7 @@
                     <?= esc($currentUser['role'] ?? 'user') ?>
                 </span>
             </div>
-            <a href="<?= base_url('logout') ?>" class="d-block text-center"
+            <a href="<?= base_url('logout') ?>" class="d-block text-center" data-turbo="false"
                style="color:#e74c3c;font-size:13px;padding:7px;border-radius:5px;background:#2c3e50;text-decoration:none;"
                onmouseover="this.style.background='#e74c3c';this.style.color='white';"
                onmouseout="this.style.background='#2c3e50';this.style.color='#e74c3c';">
@@ -259,6 +261,9 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script><script>var BASE_URL = '<?= base_url() ?>';</script>
     <script>
     (function() {
+        if (window.__jomsSidebarBound) return;
+        window.__jomsSidebarBound = true;
+
         var STORAGE_KEY = 'joms_sidebar';
         var body = document.body;
         var sidebar = document.getElementById('sidebar');
@@ -325,6 +330,24 @@
             });
         });
     })();
+    </script>
+    <script>
+    document.addEventListener('turbo:load', function() {
+        var links = document.querySelectorAll('#sidebar a[href]');
+        var path = window.location.pathname.replace(/\/$/, '');
+        var basePath = '<?= rtrim(base_url(), '/') ?>';
+        links.forEach(function(link) {
+            var href = link.getAttribute('href').replace(/\/$/, '');
+            var linkPath = href.replace(basePath, '');
+            var isActive = (linkPath && linkPath !== '' && linkPath !== '/')
+                ? path.indexOf(basePath + linkPath) === 0
+                : (path === basePath || path === basePath + '/' || path === '');
+            if (isActive) { link.classList.add('active'); } else { link.classList.remove('active'); }
+        });
+        if (window.matchMedia('(max-width: 991.98px)').matches) {
+            document.body.classList.remove('sidebar-open-mobile');
+        }
+    });
     </script>
     <?= $this->renderSection('scripts') ?>
 </body>

@@ -77,6 +77,8 @@ class Parts extends BaseController
             'department_id' => $this->request->getPost('department_id'),
             'podi_id' => $this->request->getPost('podi_id'),
             'gatti' => $this->request->getPost('gatti'),
+            'created_by' => $this->currentUser(),
+            'created_at' => date('Y-m-d H:i:s'),
         ]);
         return redirect()->to('parts')->with('success', 'Part added successfully');
     }

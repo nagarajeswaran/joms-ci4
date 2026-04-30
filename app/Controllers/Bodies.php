@@ -32,6 +32,8 @@ class Bodies extends BaseController
             'name' => $this->request->getPost('name'),
             'tamil_name' => $this->request->getPost('tamil_name'),
             'clasp_size' => $this->request->getPost('clasp_size'),
+            'created_by' => $this->currentUser(),
+            'created_at' => date('Y-m-d H:i:s'),
         ]);
         return redirect()->to('bodies')->with('success', 'Body added successfully');
     }

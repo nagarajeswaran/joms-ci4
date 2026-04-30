@@ -39,6 +39,7 @@ class FinishedGoods extends BaseController
         $this->db->table('finished_goods_master')->insert([
             'name'       => $name,
             'tamil_name' => $tamilName ?: null,
+            'created_by' => $this->currentUser(),
             'created_at' => date('Y-m-d H:i:s'),
             'updated_at' => date('Y-m-d H:i:s'),
         ]);

@@ -216,6 +216,8 @@ class TouchShop extends BaseController
             'melt_job_receive_id'=> null,
             'issue_weight_g'     => $issueWt,
             'notes'              => $this->request->getPost('notes') ?: null,
+            'created_by'         => $this->currentUser(),
+            'created_at'         => date('Y-m-d H:i:s'),
         ]);
 
         return redirect()->to('touch-shops')->with('success', 'Entry '.$serial.' created');
@@ -335,6 +337,7 @@ class TouchShop extends BaseController
                 'weight_g'       => 0,
                 'touch_pct'      => $touchPct,
                 'notes'          => 'Touch result from entry '.$entry['serial_number'],
+                'created_by'     => $this->currentUser(),
                 'created_at'     => date('Y-m-d H:i:s'),
             ]);
         }
@@ -399,6 +402,8 @@ class TouchShop extends BaseController
             'melt_job_receive_id' => $recvId,
             'issue_weight_g'      => $issueWt,
             'notes'               => $notes ?: null,
+            'created_by'          => $this->currentUser(),
+            'created_at'          => date('Y-m-d H:i:s'),
         ]);
 
         return redirect()->to('melt-jobs/view/'.$recv['melt_job_id'].'#receivedSection')

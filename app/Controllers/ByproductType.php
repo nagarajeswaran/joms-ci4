@@ -18,7 +18,11 @@ class ByproductType extends BaseController
     public function store()
     {
         $db = \Config\Database::connect();
-        $db->table('byproduct_type')->insert(['name' => $this->request->getPost('name')]);
+        $db->table('byproduct_type')->insert([
+            'name' => $this->request->getPost('name'),
+            'created_by' => $this->currentUser(),
+            'created_at' => date('Y-m-d H:i:s'),
+        ]);
         return redirect()->to('byproduct-types')->with('success', 'Added');
     }
 

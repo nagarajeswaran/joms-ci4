@@ -100,6 +100,7 @@ class AssemblyWork extends BaseController
             'notes'             => $this->request->getPost('notes') ?: null,
             'making_charge_cash'=> 0,
             'making_charge_fine'=> 0,
+            'created_by'        => $this->currentUser(),
             'created_at'        => date('Y-m-d H:i:s'),
             'updated_at'        => date('Y-m-d H:i:s'),
         ]);
@@ -112,6 +113,7 @@ class AssemblyWork extends BaseController
                 $this->db->table('assembly_work_order')->insert([
                     'assembly_work_id' => $workId,
                     'order_id'         => $orderId,
+                    'created_by'       => $this->currentUser(),
                     'created_at'       => date('Y-m-d H:i:s'),
                 ]);
             }
@@ -246,29 +248,52 @@ class AssemblyWork extends BaseController
     public function addOrder($id)
     {
         if ($redirect = $this->ensureModuleTables()) {
+            if ($this->request->isAJAX()) return $this->response->setJSON(['success' => false, 'error' => 'Module tables not ready', 'csrf_hash' => csrf_hash()]);
             return $redirect;
         }
 
+        $isAjax = $this->request->isAJAX();
+
         $work = $this->_getWork($id);
         if (!$work || in_array($work['status'], ['finished', 'completed'], true)) {
+            if ($isAjax) return $this->response->setJSON(['success' => false, 'error' => 'Cannot modify linked orders', 'csrf_hash' => csrf_hash()]);
             return redirect()->to('assembly-work/view/'.$id)->with('error', 'Cannot modify linked orders');
         }
 
         $orderId = (int)$this->request->getPost('order_id');
         if ($orderId <= 0) {
+            if ($isAjax) return $this->response->setJSON(['success' => false, 'error' => 'Order is required', 'csrf_hash' => csrf_hash()]);
             return redirect()->to('assembly-work/view/'.$id)->with('error', 'Order is required');
         }
 
         $exists = $this->db->query('SELECT id FROM assembly_work_order WHERE assembly_work_id = ? AND order_id = ?', [$id, $orderId])->getRowArray();
+        $linkId = null;
         if (!$exists) {
             $this->db->table('assembly_work_order')->insert([
                 'assembly_work_id' => $id,
                 'order_id'         => $orderId,
+                'created_by'       => $this->currentUser(),
                 'created_at'       => date('Y-m-d H:i:s'),
             ]);
+            $linkId = $this->db->insertID();
+        } else {
+            $linkId = $exists['id'];
         }
 
         $this->_touchInProgress($id);
+
+        if ($isAjax) {
+            $order = $this->db->query('
+                SELECT o.id, o.order_number, o.title, c.name as client_name
+                FROM orders o LEFT JOIN client c ON c.id = o.client_id
+                WHERE o.id = ?
+            ', [$orderId])->getRowArray();
+            return $this->response->setJSON([
+                'success' => true, 'csrf_hash' => csrf_hash(),
+                'link_id' => $linkId,
+                'order' => $order,
+            ]);
+        }
 
         return redirect()->to('assembly-work/view/'.$id)->with('success', 'Order linked');
     }
@@ -276,16 +301,22 @@ class AssemblyWork extends BaseController
     public function removeOrder($id, $linkId)
     {
         if ($redirect = $this->ensureModuleTables()) {
+            if ($this->request->isAJAX()) return $this->response->setJSON(['success' => false, 'error' => 'Module tables not ready', 'csrf_hash' => csrf_hash()]);
             return $redirect;
         }
 
+        $isAjax = $this->request->isAJAX();
+
         $work = $this->_getWork($id);
         if (!$work || in_array($work['status'], ['finished', 'completed'], true)) {
+            if ($isAjax) return $this->response->setJSON(['success' => false, 'error' => 'Cannot modify linked orders', 'csrf_hash' => csrf_hash()]);
             return redirect()->to('assembly-work/view/'.$id)->with('error', 'Cannot modify linked orders');
         }
 
         $this->db->table('assembly_work_order')->where('id', $linkId)->where('assembly_work_id', $id)->delete();
         $this->_touchInProgress($id);
+
+        if ($isAjax) return $this->response->setJSON(['success' => true, 'csrf_hash' => csrf_hash()]);
 
         return redirect()->to('assembly-work/view/'.$id)->with('success', 'Order removed');
     }
@@ -293,11 +324,17 @@ class AssemblyWork extends BaseController
     public function addIssue($id)
     {
         if ($redirect = $this->ensureModuleTables()) {
+            if ($this->request->isAJAX()) {
+                return $this->response->setJSON(['success' => false, 'error' => 'Module tables not ready', 'csrf_hash' => csrf_hash()]);
+            }
             return $redirect;
         }
 
+        $isAjax = $this->request->isAJAX();
+
         $work = $this->_getWork($id);
         if (!$work || in_array($work['status'], ['finished', 'completed'], true)) {
+            if ($isAjax) return $this->response->setJSON(['success' => false, 'error' => 'Cannot add issue', 'csrf_hash' => csrf_hash()]);
             return redirect()->to('assembly-work/view/'.$id)->with('error', 'Cannot add issue');
         }
 
@@ -305,20 +342,26 @@ class AssemblyWork extends BaseController
         $weightG     = (float)$this->request->getPost('weight_g');
 
         if ($partBatchId <= 0 || $weightG <= 0) {
+            if ($isAjax) return $this->response->setJSON(['success' => false, 'error' => 'Batch and weight are required', 'csrf_hash' => csrf_hash()]);
             return redirect()->to('assembly-work/view/'.$id)->with('error', 'Batch and weight are required');
         }
 
         $batch = $this->db->query('SELECT * FROM part_batch WHERE id = ?', [$partBatchId])->getRowArray();
         if (!$batch) {
+            if ($isAjax) return $this->response->setJSON(['success' => false, 'error' => 'Part batch not found', 'csrf_hash' => csrf_hash()]);
             return redirect()->to('assembly-work/view/'.$id)->with('error', 'Part batch not found');
         }
         if ($weightG > (float)$batch['weight_in_stock_g']) {
-            return redirect()->to('assembly-work/view/'.$id)->with('error', 'Not enough stock. Available: '.number_format($batch['weight_in_stock_g'], 4).'g');
+            $errMsg = 'Not enough stock. Available: '.number_format($batch['weight_in_stock_g'], 4).'g';
+            if ($isAjax) return $this->response->setJSON(['success' => false, 'error' => $errMsg, 'csrf_hash' => csrf_hash()]);
+            return redirect()->to('assembly-work/view/'.$id)->with('error', $errMsg);
         }
 
         $pieceWeight = (float)($batch['piece_weight_g'] ?? 0);
         $pcs = $pieceWeight > 0 ? round($weightG / $pieceWeight, 4) : 0;
         $enteredBy = $this->_currentUser();
+
+        $this->db->transStart();
 
         $this->db->table('assembly_work_issue')->insert([
             'assembly_work_id' => $id,
@@ -335,9 +378,74 @@ class AssemblyWork extends BaseController
             'issued_at'        => date('Y-m-d H:i:s'),
             'created_at'       => date('Y-m-d H:i:s'),
         ]);
+        $newIssueId = $this->db->insertID();
 
         $this->db->query('UPDATE part_batch SET weight_in_stock_g = GREATEST(0, weight_in_stock_g - ?) WHERE id = ?', [$weightG, $partBatchId]);
+
+        $this->db->transComplete();
+
+        if ($this->db->transStatus() === false) {
+            if ($isAjax) return $this->response->setJSON(['success' => false, 'error' => 'Database error', 'csrf_hash' => csrf_hash()]);
+            return redirect()->to('assembly-work/view/'.$id)->with('error', 'Database error');
+        }
+
         $this->_touchInProgress($id);
+
+        if ($isAjax) {
+            $newBatch = $this->db->query('SELECT weight_in_stock_g FROM part_batch WHERE id = ?', [$partBatchId])->getRowArray();
+            $newBatchStock = (float)($newBatch['weight_in_stock_g'] ?? 0);
+
+            $partRow = $this->db->query('SELECT name, tamil_name FROM part WHERE id = ?', [$batch['part_id']])->getRowArray();
+            $stampRow = $batch['stamp_id'] ? $this->db->query('SELECT name FROM stamp WHERE id = ?', [$batch['stamp_id']])->getRowArray() : null;
+
+            $totals = $this->db->query('SELECT SUM(weight_g) as total_weight, SUM(pcs) as total_pcs FROM assembly_work_issue WHERE assembly_work_id = ?', [$id])->getRowArray();
+
+            $updatedReq = null;
+            $requirements = $this->_getRequirementSummary((int)$id);
+            foreach ($requirements as $req) {
+                if ((int)$req['part_id'] === (int)$batch['part_id']) {
+                    $updatedReq = [
+                        'part_id'                  => (int)$req['part_id'],
+                        'part_name'                => $req['part_name'] ?? '',
+                        'required_pcs'             => (float)($req['required_pcs'] ?? 0),
+                        'required_weight_g'        => (float)($req['required_weight_g'] ?? 0),
+                        'issued_pcs'               => (float)($req['issued_pcs'] ?? 0),
+                        'issued_weight_g'          => (float)($req['issued_weight_g'] ?? 0),
+                        'pending_pcs'              => (float)($req['pending_pcs'] ?? 0),
+                        'pending_weight_g'         => (float)($req['pending_weight_g'] ?? 0),
+                        'required_weight_g_approx' => (float)($req['required_weight_g_approx'] ?? 0),
+                        'pending_weight_g_approx'  => (float)($req['pending_weight_g_approx'] ?? 0),
+                        'stock_weight_g'           => (float)($req['stock_weight_g'] ?? 0),
+                        'suggested_issue_weight_g' => (float)($req['suggested_issue_weight_g'] ?? 0),
+                        'shortage_weight_g'        => (float)($req['shortage_weight_g'] ?? 0),
+                    ];
+                    break;
+                }
+            }
+
+            return $this->response->setJSON([
+                'success'            => true,
+                'csrf_hash'          => csrf_hash(),
+                'issue'              => [
+                    'id'                   => $newIssueId,
+                    'part_name'            => $partRow['name'] ?? '',
+                    'part_tamil'           => $partRow['tamil_name'] ?? '',
+                    'batch_number'         => $batch['batch_number'] ?? '',
+                    'stamp_name'           => $stampRow['name'] ?? '-',
+                    'weight_g'             => $weightG,
+                    'pcs'                  => $pcs,
+                    'notes'                => $this->request->getPost('notes') ?: '',
+                    'created_by_username'  => $enteredBy['username'],
+                    'issued_at'            => date('d/m/Y H:i'),
+                    'current_stock_g'      => $newBatchStock,
+                ],
+                'part_batch_id'      => $partBatchId,
+                'new_batch_stock_g'  => $newBatchStock,
+                'totalIssuedWeight'  => (float)($totals['total_weight'] ?? 0),
+                'totalIssuedPcs'     => (float)($totals['total_pcs'] ?? 0),
+                'updatedRequirement' => $updatedReq,
+            ]);
+        }
 
         return redirect()->to('assembly-work/view/'.$id)->with('success', 'Issue added');
     }
@@ -345,16 +453,21 @@ class AssemblyWork extends BaseController
     public function deleteIssue($issueId)
     {
         if ($redirect = $this->ensureModuleTables()) {
+            if ($this->request->isAJAX()) return $this->response->setJSON(['success' => false, 'error' => 'Module tables not ready', 'csrf_hash' => csrf_hash()]);
             return $redirect;
         }
 
+        $isAjax = $this->request->isAJAX();
+
         $issue = $this->db->query('SELECT * FROM assembly_work_issue WHERE id = ?', [$issueId])->getRowArray();
         if (!$issue) {
+            if ($isAjax) return $this->response->setJSON(['success' => false, 'error' => 'Issue not found', 'csrf_hash' => csrf_hash()]);
             return redirect()->to('assembly-work')->with('error', 'Issue not found');
         }
 
         $work = $this->_getWork($issue['assembly_work_id']);
         if (!$work || in_array($work['status'], ['finished', 'completed'], true)) {
+            if ($isAjax) return $this->response->setJSON(['success' => false, 'error' => 'Cannot delete issue', 'csrf_hash' => csrf_hash()]);
             return redirect()->to('assembly-work/view/'.$issue['assembly_work_id'])->with('error', 'Cannot delete issue');
         }
 
@@ -362,39 +475,60 @@ class AssemblyWork extends BaseController
         $this->db->table('assembly_work_issue')->where('id', $issueId)->delete();
         $this->_touchInProgress($issue['assembly_work_id']);
 
+        if ($isAjax) {
+            $newBatch = $this->db->query('SELECT weight_in_stock_g FROM part_batch WHERE id = ?', [$issue['part_batch_id']])->getRowArray();
+            $totals = $this->db->query('SELECT COALESCE(SUM(weight_g),0) as total_weight, COALESCE(SUM(pcs),0) as total_pcs FROM assembly_work_issue WHERE assembly_work_id = ?', [$issue['assembly_work_id']])->getRowArray();
+            return $this->response->setJSON([
+                'success' => true, 'csrf_hash' => csrf_hash(),
+                'part_batch_id' => (int)$issue['part_batch_id'],
+                'new_batch_stock_g' => (float)($newBatch['weight_in_stock_g'] ?? 0),
+                'totalIssuedWeight' => (float)($totals['total_weight'] ?? 0),
+                'totalIssuedPcs' => (float)($totals['total_pcs'] ?? 0),
+            ]);
+        }
+
         return redirect()->to('assembly-work/view/'.$issue['assembly_work_id'])->with('success', 'Issue deleted');
     }
 
     public function updateIssue($issueId)
     {
         if ($redirect = $this->ensureModuleTables()) {
+            if ($this->request->isAJAX()) return $this->response->setJSON(['success' => false, 'error' => 'Module tables not ready', 'csrf_hash' => csrf_hash()]);
             return $redirect;
         }
 
+        $isAjax = $this->request->isAJAX();
+
         $issue = $this->db->query('SELECT * FROM assembly_work_issue WHERE id = ?', [$issueId])->getRowArray();
         if (!$issue) {
+            if ($isAjax) return $this->response->setJSON(['success' => false, 'error' => 'Issue not found', 'csrf_hash' => csrf_hash()]);
             return redirect()->to('assembly-work')->with('error', 'Issue not found');
         }
 
         $work = $this->_getWork($issue['assembly_work_id']);
         if (!$work || in_array($work['status'], ['finished', 'completed'], true)) {
+            if ($isAjax) return $this->response->setJSON(['success' => false, 'error' => 'Cannot update issue', 'csrf_hash' => csrf_hash()]);
             return redirect()->to('assembly-work/view/'.$issue['assembly_work_id'])->with('error', 'Cannot update issue');
         }
 
         $newWeight = (float)$this->request->getPost('weight_g');
         if ($newWeight <= 0) {
+            if ($isAjax) return $this->response->setJSON(['success' => false, 'error' => 'Weight must be greater than zero', 'csrf_hash' => csrf_hash()]);
             return redirect()->to('assembly-work/view/'.$issue['assembly_work_id'])->with('error', 'Weight must be greater than zero');
         }
 
         $batch = $this->db->query('SELECT * FROM part_batch WHERE id = ?', [$issue['part_batch_id']])->getRowArray();
         if (!$batch) {
+            if ($isAjax) return $this->response->setJSON(['success' => false, 'error' => 'Part batch not found', 'csrf_hash' => csrf_hash()]);
             return redirect()->to('assembly-work/view/'.$issue['assembly_work_id'])->with('error', 'Part batch not found');
         }
 
         $oldWeight = (float)$issue['weight_g'];
         $available = (float)$batch['weight_in_stock_g'] + $oldWeight;
         if ($newWeight > $available) {
-            return redirect()->to('assembly-work/view/'.$issue['assembly_work_id'])->with('error', 'Not enough stock. Available: '.number_format($available, 4).'g');
+            $errMsg = 'Not enough stock. Available: '.number_format($available, 4).'g';
+            if ($isAjax) return $this->response->setJSON(['success' => false, 'error' => $errMsg, 'csrf_hash' => csrf_hash()]);
+            return redirect()->to('assembly-work/view/'.$issue['assembly_work_id'])->with('error', $errMsg);
         }
 
         $pieceWeight = (float)($issue['piece_weight_g'] ?? $batch['piece_weight_g'] ?? 0);
@@ -413,17 +547,47 @@ class AssemblyWork extends BaseController
 
         $this->_touchInProgress($issue['assembly_work_id']);
 
+        if ($isAjax) {
+            $newBatch = $this->db->query('SELECT weight_in_stock_g FROM part_batch WHERE id = ?', [$issue['part_batch_id']])->getRowArray();
+            $totals = $this->db->query('SELECT COALESCE(SUM(weight_g),0) as total_weight, COALESCE(SUM(pcs),0) as total_pcs FROM assembly_work_issue WHERE assembly_work_id = ?', [$issue['assembly_work_id']])->getRowArray();
+            $partRow = $this->db->query('SELECT name, tamil_name FROM part WHERE id = ?', [$issue['part_id']])->getRowArray();
+            $stampRow = $issue['stamp_id'] ? $this->db->query('SELECT name FROM stamp WHERE id = ?', [$issue['stamp_id']])->getRowArray() : null;
+            return $this->response->setJSON([
+                'success' => true, 'csrf_hash' => csrf_hash(),
+                'issue' => [
+                    'id' => (int)$issueId,
+                    'part_name' => $partRow['name'] ?? '',
+                    'part_tamil' => $partRow['tamil_name'] ?? '',
+                    'batch_number' => $batch['batch_number'] ?? '',
+                    'stamp_name' => $stampRow['name'] ?? '-',
+                    'weight_g' => $newWeight,
+                    'pcs' => $pcs,
+                    'notes' => $this->request->getPost('notes') ?: '',
+                    'issued_at' => date('d/m/Y H:i'),
+                    'current_stock_g' => (float)($newBatch['weight_in_stock_g'] ?? 0),
+                ],
+                'part_batch_id' => (int)$issue['part_batch_id'],
+                'new_batch_stock_g' => (float)($newBatch['weight_in_stock_g'] ?? 0),
+                'totalIssuedWeight' => (float)($totals['total_weight'] ?? 0),
+                'totalIssuedPcs' => (float)($totals['total_pcs'] ?? 0),
+            ]);
+        }
+
         return redirect()->to('assembly-work/view/'.$issue['assembly_work_id'])->with('success', 'Issue updated');
     }
 
     public function addReceive($id)
     {
         if ($redirect = $this->ensureModuleTables()) {
+            if ($this->request->isAJAX()) return $this->response->setJSON(['success' => false, 'error' => 'Module tables not ready', 'csrf_hash' => csrf_hash()]);
             return $redirect;
         }
 
+        $isAjax = $this->request->isAJAX();
+
         $work = $this->_getWork($id);
         if (!$work || $work['status'] === 'completed') {
+            if ($isAjax) return $this->response->setJSON(['success' => false, 'error' => 'Cannot add receive', 'csrf_hash' => csrf_hash()]);
             return redirect()->to('assembly-work/view/'.$id)->with('error', 'Cannot add receive');
         }
 
@@ -436,6 +600,7 @@ class AssemblyWork extends BaseController
         $enteredBy   = $this->_currentUser();
 
         if ($weightG <= 0 || $batchNumber === '') {
+            if ($isAjax) return $this->response->setJSON(['success' => false, 'error' => 'Batch number and weight are required', 'csrf_hash' => csrf_hash()]);
             return redirect()->to('assembly-work/view/'.$id)->with('error', 'Batch number and weight are required');
         }
 
@@ -448,6 +613,7 @@ class AssemblyWork extends BaseController
         if ($receiveType === 'finished_good') {
             $finishedGoodsId = (int)$this->request->getPost('finished_goods_id');
             if ($finishedGoodsId <= 0) {
+                if ($isAjax) return $this->response->setJSON(['success' => false, 'error' => 'Finished good is required', 'csrf_hash' => csrf_hash()]);
                 return redirect()->to('assembly-work/view/'.$id)->with('error', 'Finished good is required');
             }
             $pcs = null;
@@ -455,11 +621,13 @@ class AssemblyWork extends BaseController
         } elseif ($receiveType === 'returned_part') {
             $partId = (int)$this->request->getPost('part_id');
             if ($partId <= 0) {
+                if ($isAjax) return $this->response->setJSON(['success' => false, 'error' => 'Part is required', 'csrf_hash' => csrf_hash()]);
                 return redirect()->to('assembly-work/view/'.$id)->with('error', 'Part is required');
             }
 
             $exists = $this->db->query('SELECT id FROM part_batch WHERE batch_number = ?', [$batchNumber])->getRowArray();
             if ($exists) {
+                if ($isAjax) return $this->response->setJSON(['success' => false, 'error' => 'Batch number already exists. Receive must use a new batch', 'csrf_hash' => csrf_hash()]);
                 return redirect()->to('assembly-work/view/'.$id)->with('error', 'Batch number already exists. Receive must use a new batch');
             }
 
@@ -473,12 +641,14 @@ class AssemblyWork extends BaseController
                 'weight_in_stock_g'    => $weightG,
                 'source_part_order_id' => null,
                 'received_at'          => date('Y-m-d H:i:s'),
+                'created_by'           => $this->currentUser(),
                 'created_at'           => date('Y-m-d H:i:s'),
             ]);
             $partBatchId = $this->db->insertID();
         } elseif ($receiveType === 'by_product') {
             $byproductTypeId = (int)$this->request->getPost('byproduct_type_id');
             if ($byproductTypeId <= 0) {
+                if ($isAjax) return $this->response->setJSON(['success' => false, 'error' => 'By-product type is required', 'csrf_hash' => csrf_hash()]);
                 return redirect()->to('assembly-work/view/'.$id)->with('error', 'By-product type is required');
             }
 
@@ -489,15 +659,18 @@ class AssemblyWork extends BaseController
                 'source_job_type'   => null,
                 'source_job_id'     => $id,
                 'added_at'          => date('Y-m-d H:i:s'),
+                'created_by'        => $this->currentUser(),
+                'created_at'        => date('Y-m-d H:i:s'),
             ]);
         } elseif ($receiveType === 'kacha') {
             $exists = $this->db->query('SELECT id FROM kacha_lot WHERE lot_number = ?', [$batchNumber])->getRowArray();
             if ($exists) {
+                if ($isAjax) return $this->response->setJSON(['success' => false, 'error' => 'Kacha lot number already exists', 'csrf_hash' => csrf_hash()]);
                 return redirect()->to('assembly-work/view/'.$id)->with('error', 'Kacha lot number already exists');
             }
             $this->db->query(
-                'INSERT INTO kacha_lot (lot_number, weight, touch_pct, receipt_date, party, source_type, test_touch, test_number, notes, created_at)
-                 VALUES (?,?,?,?,?,?,?,?,?,?)',
+                'INSERT INTO kacha_lot (lot_number, weight, touch_pct, receipt_date, party, source_type, test_touch, test_number, notes, created_by, created_at)
+                 VALUES (?,?,?,?,?,?,?,?,?,?,?)',
                 [
                     $batchNumber,
                     $weightG,
@@ -508,6 +681,7 @@ class AssemblyWork extends BaseController
                     null,
                     null,
                     $this->request->getPost('notes') ?: null,
+                    $this->currentUser(),
                     date('Y-m-d H:i:s'),
                 ]
             );
@@ -515,6 +689,7 @@ class AssemblyWork extends BaseController
             $pcs = null;
             $pieceWeight = 0;
         } else {
+            if ($isAjax) return $this->response->setJSON(['success' => false, 'error' => 'Invalid receive type', 'csrf_hash' => csrf_hash()]);
             return redirect()->to('assembly-work/view/'.$id)->with('error', 'Invalid receive type');
         }
 
@@ -541,22 +716,29 @@ class AssemblyWork extends BaseController
 
         $this->_touchInProgress($id);
 
+        if ($isAjax) return $this->response->setJSON(['success' => true, 'csrf_hash' => csrf_hash()]);
+
         return redirect()->to('assembly-work/view/'.$id)->with('success', 'Receive added');
     }
 
     public function deleteReceive($recvId)
     {
         if ($redirect = $this->ensureModuleTables()) {
+            if ($this->request->isAJAX()) return $this->response->setJSON(['success' => false, 'error' => 'Module tables not ready', 'csrf_hash' => csrf_hash()]);
             return $redirect;
         }
 
+        $isAjax = $this->request->isAJAX();
+
         $recv = $this->db->query('SELECT * FROM assembly_work_receive WHERE id = ?', [$recvId])->getRowArray();
         if (!$recv) {
+            if ($isAjax) return $this->response->setJSON(['success' => false, 'error' => 'Receive not found', 'csrf_hash' => csrf_hash()]);
             return redirect()->to('assembly-work')->with('error', 'Receive not found');
         }
 
         $work = $this->_getWork($recv['assembly_work_id']);
         if (!$work || in_array($work['status'], ['finished', 'completed'], true)) {
+            if ($isAjax) return $this->response->setJSON(['success' => false, 'error' => 'Cannot delete receive', 'csrf_hash' => csrf_hash()]);
             return redirect()->to('assembly-work/view/'.$recv['assembly_work_id'])->with('error', 'Cannot delete receive');
         }
 
@@ -566,27 +748,35 @@ class AssemblyWork extends BaseController
         $this->db->table('assembly_work_receive')->where('id', $recvId)->delete();
         $this->_touchInProgress($recv['assembly_work_id']);
 
+        if ($isAjax) return $this->response->setJSON(['success' => true, 'csrf_hash' => csrf_hash()]);
+
         return redirect()->to('assembly-work/view/'.$recv['assembly_work_id'])->with('success', 'Receive deleted');
     }
 
     public function updateReceive($recvId)
     {
         if ($redirect = $this->ensureModuleTables()) {
+            if ($this->request->isAJAX()) return $this->response->setJSON(['success' => false, 'error' => 'Module tables not ready', 'csrf_hash' => csrf_hash()]);
             return $redirect;
         }
 
+        $isAjax = $this->request->isAJAX();
+
         $recv = $this->db->query('SELECT * FROM assembly_work_receive WHERE id = ?', [$recvId])->getRowArray();
         if (!$recv) {
+            if ($isAjax) return $this->response->setJSON(['success' => false, 'error' => 'Receive not found', 'csrf_hash' => csrf_hash()]);
             return redirect()->to('assembly-work')->with('error', 'Receive not found');
         }
 
         $work = $this->_getWork($recv['assembly_work_id']);
         if (!$work || in_array($work['status'], ['finished', 'completed'], true)) {
+            if ($isAjax) return $this->response->setJSON(['success' => false, 'error' => 'Cannot update receive', 'csrf_hash' => csrf_hash()]);
             return redirect()->to('assembly-work/view/'.$recv['assembly_work_id'])->with('error', 'Cannot update receive');
         }
 
         $newWeight = (float)$this->request->getPost('weight_g');
         if ($newWeight <= 0) {
+            if ($isAjax) return $this->response->setJSON(['success' => false, 'error' => 'Weight must be greater than zero', 'csrf_hash' => csrf_hash()]);
             return redirect()->to('assembly-work/view/'.$recv['assembly_work_id'])->with('error', 'Weight must be greater than zero');
         }
 
@@ -670,17 +860,23 @@ class AssemblyWork extends BaseController
 
         $this->_touchInProgress($recv['assembly_work_id']);
 
+        if ($isAjax) return $this->response->setJSON(['success' => true, 'csrf_hash' => csrf_hash()]);
+
         return redirect()->to('assembly-work/view/'.$recv['assembly_work_id'])->with('success', 'Receive updated');
     }
 
     public function saveSummary($id)
     {
         if ($redirect = $this->ensureModuleTables()) {
+            if ($this->request->isAJAX()) return $this->response->setJSON(['success' => false, 'error' => 'Module tables not ready', 'csrf_hash' => csrf_hash()]);
             return $redirect;
         }
 
+        $isAjax = $this->request->isAJAX();
+
         $work = $this->_getWork($id);
         if (!$work || $work['status'] === 'completed') {
+            if ($isAjax) return $this->response->setJSON(['success' => false, 'error' => 'Cannot save summary', 'csrf_hash' => csrf_hash()]);
             return redirect()->to('assembly-work/view/'.$id)->with('error', 'Cannot save summary');
         }
 
@@ -729,10 +925,13 @@ class AssemblyWork extends BaseController
             if ($exists) {
                 $this->db->table('assembly_work_summary')->where('id', $exists['id'])->update($data);
             } else {
+                $data['created_by'] = $this->currentUser();
                 $data['created_at'] = date('Y-m-d H:i:s');
                 $this->db->table('assembly_work_summary')->insert($data);
             }
         }
+
+        if ($isAjax) return $this->response->setJSON(['success' => true, 'csrf_hash' => csrf_hash()]);
 
         return redirect()->to('assembly-work/view/'.$id.'#summary')->with('success', 'Summary saved');
     }
@@ -798,6 +997,83 @@ class AssemblyWork extends BaseController
         ]);
 
         return redirect()->to('assembly-work/view/'.$id)->with('success', 'Assembly work completed');
+    }
+
+    public function reopen($id)
+    {
+        if ($redirect = $this->ensureModuleTables()) {
+            return $redirect;
+        }
+
+        $work = $this->_getWork($id);
+        if (!$work) {
+            return redirect()->to('assembly-work')->with('error', 'Assembly work not found');
+        }
+
+        if (!in_array($work['status'], ['finished', 'completed'], true)) {
+            return redirect()->to('assembly-work/view/'.$id)->with('error', 'Only finished or completed work can be reopened');
+        }
+
+        $this->db->table('assembly_work')->where('id', $id)->update([
+            'status'       => 'in_progress',
+            'finished_at'  => null,
+            'completed_at' => null,
+            'updated_at'   => date('Y-m-d H:i:s'),
+        ]);
+
+        return redirect()->to('assembly-work/view/'.$id)->with('success', 'Assembly work reopened — status set to In Progress');
+    }
+
+    public function edit($id)
+    {
+        if ($redirect = $this->ensureModuleTables()) {
+            return $redirect;
+        }
+
+        $work = $this->_getWork($id);
+        if (!$work) {
+            return redirect()->to('assembly-work')->with('error', 'Assembly work not found');
+        }
+
+        $karigarId = (int)$this->request->getPost('karigar_id');
+        $notes     = $this->request->getPost('notes') ?: null;
+
+        if ($karigarId <= 0) {
+            return redirect()->to('assembly-work/view/'.$id)->with('error', 'Karigar is required');
+        }
+
+        $this->db->table('assembly_work')->where('id', $id)->update([
+            'karigar_id' => $karigarId,
+            'notes'      => $notes,
+            'updated_at' => date('Y-m-d H:i:s'),
+        ]);
+
+        return redirect()->to('assembly-work/view/'.$id)->with('success', 'Assembly work updated');
+    }
+
+    public function delete($id)
+    {
+        if ($redirect = $this->ensureModuleTables()) {
+            return $redirect;
+        }
+
+        $work = $this->_getWork($id);
+        if (!$work) {
+            return redirect()->to('assembly-work')->with('error', 'Assembly work not found');
+        }
+
+        $issues = $this->db->query('SELECT * FROM assembly_work_issue WHERE assembly_work_id = ?', [$id])->getResultArray();
+        foreach ($issues as $issue) {
+            $this->db->query('UPDATE part_batch SET weight_in_stock_g = weight_in_stock_g + ? WHERE id = ?', [(float)$issue['weight_g'], $issue['part_batch_id']]);
+        }
+
+        $this->db->table('assembly_work_issue')->where('assembly_work_id', $id)->delete();
+        $this->db->table('assembly_work_receive')->where('assembly_work_id', $id)->delete();
+        $this->db->table('assembly_work_order')->where('assembly_work_id', $id)->delete();
+        $this->db->table('assembly_work_summary')->where('assembly_work_id', $id)->delete();
+        $this->db->table('assembly_work')->where('id', $id)->delete();
+
+        return redirect()->to('assembly-work')->with('success', 'Assembly work deleted and stock restored');
     }
 
     private function _getWork($id)

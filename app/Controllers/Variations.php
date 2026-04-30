@@ -35,6 +35,8 @@ class Variations extends BaseController
             'group_tamil_name' => $groupTamil,
             'name'             => $this->request->getPost('name'),
             'size'             => $this->request->getPost('size'),
+            'created_by'       => $this->currentUser(),
+            'created_at'       => date('Y-m-d H:i:s'),
         ]);
         // Sync Tamil name across all variations in the same group
         $db = \Config\Database::connect();

@@ -248,6 +248,9 @@ $routes->post('assembly-work/(:num)/save-summary', 'AssemblyWork::saveSummary/$1
 $routes->get('assembly-work/finish/(:num)', 'AssemblyWork::markFinished/$1');
 $routes->post('assembly-work/(:num)/save-making-charge', 'AssemblyWork::saveMakingCharge/$1');
 $routes->get('assembly-work/complete/(:num)', 'AssemblyWork::complete/$1');
+$routes->get('assembly-work/reopen/(:num)', 'AssemblyWork::reopen/$1');
+$routes->post('assembly-work/(:num)/edit', 'AssemblyWork::edit/$1');
+$routes->get('assembly-work/delete/(:num)', 'AssemblyWork::delete/$1');
 
 // Raw Material Types
 $routes->get('raw-material-types', 'RawMaterialType::index');

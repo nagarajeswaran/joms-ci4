@@ -105,4 +105,13 @@ abstract class BaseController extends Controller
             redirect()->to(base_url($this->getRoleHomePath($currentRole)))->with('error', 'You do not have permission to access that page.')
         );
     }
+
+    /**
+     * Get the current logged-in username for audit tracking.
+     */
+    protected function currentUser(): string
+    {
+        $user = session()->get('user') ?? [];
+        return $user['username'] ?? $user['name'] ?? 'system';
+    }
 }

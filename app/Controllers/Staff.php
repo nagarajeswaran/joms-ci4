@@ -208,6 +208,7 @@ class Staff extends BaseController
                 'user_id'    => $userId,
                 'role'       => $role !== '' ? $role : 'staff',
                 'status'     => $status !== '' ? $status : 'active',
+                'created_by' => $this->currentUser(),
                 'created_at' => date('Y-m-d H:i:s'),
             ]);
 
@@ -297,6 +298,8 @@ class Staff extends BaseController
             'touch_shop_name' => $touchShopName ?: null,
             'issue_weight_g'  => $issueWeight,
             'notes'           => trim((string) $this->request->getPost('notes')) ?: null,
+            'created_by'      => $this->currentUser(),
+            'created_at'      => date('Y-m-d H:i:s'),
         ]);
 
         return redirect()->to(base_url('staff/touch-booking'))->with('success', 'Touch booking created: ' . $serial);

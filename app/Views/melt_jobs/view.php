@@ -24,7 +24,10 @@
         </small>
         <?php if ($isDraft): ?><div><small class="text-primary" style="font-size:11px"><i class="bi bi-pencil-fill"></i> Click any value above to edit</small></div><?php endif; ?>
     </div>
-    <span class="badge <?= $job['status'] === 'posted' ? 'bg-success' : 'bg-warning text-dark' ?> fs-6"><?= ucfirst($job['status']) ?></span>
+    <div class="d-flex align-items-center gap-2">
+        <span class="badge <?= $job['status'] === 'posted' ? 'bg-success' : 'bg-warning text-dark' ?> fs-6"><?= ucfirst($job['status']) ?></span>
+        <a href="<?= base_url('melt-jobs') ?>" class="btn btn-secondary btn-sm"><i class="bi bi-arrow-left"></i> Back</a>
+    </div>
 </div>
 
 <?php if (session()->getFlashdata('success')): ?>

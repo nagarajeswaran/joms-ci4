@@ -27,6 +27,8 @@ class PatternNames extends BaseController
         $this->db->table('pattern_name')->insert([
             'name' => $this->request->getPost('name'),
             'tamil_name' => $this->request->getPost('tamil_name') ?? '',
+            'created_by' => $this->currentUser(),
+            'created_at' => date('Y-m-d H:i:s'),
         ]);
         return redirect()->to('pattern-names')->with('success', 'Pattern name added');
     }
