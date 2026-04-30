@@ -128,10 +128,12 @@ class Products extends BaseController
             'short_name' => trim($data['short_name'] ?? '') ?: null,
             'sku' => $data['sku'] ?? '',
             'tamil_name' => $data['tamil_name'] ?? '',
-            'product_type_id' => $data['product_type_id'] ?: null,
-            'body_id' => $data['body_id'] ?: null,
-            'main_part_id' => $data['main_part_id'] ?: null,
+            'product_type_id' => !empty($data['product_type_id']) ? $data['product_type_id'] : null,
+            'body_id' => !empty($data['body_id']) ? $data['body_id'] : null,
+            'main_part_id' => !empty($data['main_part_id']) ? $data['main_part_id'] : null,
             'pidi' => $data['pidi'] ?? '',
+            'created_by' => $this->currentUser(),
+            'created_at' => date('Y-m-d H:i:s'),
         ];
 
         $image = $this->request->getFile('product_image');
@@ -154,6 +156,8 @@ class Products extends BaseController
             'name' => 'Standard',
             'tamil_name' => '',
             'is_default' => 1,
+            'created_by' => $this->currentUser(),
+            'created_at' => date('Y-m-d H:i:s'),
         ]);
 
         return redirect()->to('products/view/' . $productId)->with('success', 'Product added successfully');
@@ -279,65 +283,74 @@ class Products extends BaseController
     {
         $data = $this->request->getPost();
 
-        $sku = trim($data['sku'] ?? '');
-        if ($sku !== '') {
-            $dupe = $this->db->query('SELECT id FROM product WHERE sku = ? AND id != ?', [$sku, $id])->getRowArray();
-            if ($dupe) return redirect()->back()->withInput()->with('error', 'SKU "' . $sku . '" already used by another product.');
-        }
-
-        $mainPartId = $data['main_part_id'] ?: null;
-        if ($mainPartId) {
-            $partExists = $this->db->query('SELECT id FROM part WHERE id = ?', [$mainPartId])->getRowArray();
-            if (!$partExists) $mainPartId = null;
-        }
-
-        $productData = [
-            'name' => $data['name'] ?? '',
-            'short_name' => trim($data['short_name'] ?? '') ?: null,
-            'sku' => $data['sku'] ?? '',
-            'tamil_name' => $data['tamil_name'] ?? '',
-            'product_type_id' => $data['product_type_id'] ?: null,
-            'body_id' => $data['body_id'] ?: null,
-            'main_part_id' => $mainPartId,
-            'pidi' => $data['pidi'] ?? '',
-        ];
-
-        $image = $this->request->getFile('product_image');
-        if ($image && $image->isValid() && !$image->hasMoved()) {
-            $newName = $image->getRandomName();
-            $uploadPath = FCPATH . 'uploads/products';
-            if (!is_dir($uploadPath)) mkdir($uploadPath, 0777, true);
-            $image->move($uploadPath, $newName);
-            $productData['image'] = $newName;
-        }
-
-        // Fetch old SKU before updating
-        $oldSku = $this->db->query('SELECT sku FROM product WHERE id = ?', [$id])->getRowArray()['sku'] ?? '';
-
-        $this->db->table('product')->where('id', $id)->update($productData);
-        $this->db->query('DELETE FROM product_bill_of_material WHERE product_id = ?', [$id]);
-        $this->saveBom($id, $data);
-
-        // Regenerate pattern codes if SKU changed to a non-empty value
-        $newSku = trim($data['sku'] ?? '');
-        if ($newSku !== '' && $newSku !== trim((string)$oldSku)) {
-            $patterns = $this->db->query(
-                'SELECT id, is_default FROM product_pattern WHERE product_id = ? ORDER BY is_default DESC, id ASC',
-                [$id]
-            )->getResultArray();
-            $nonDefaultCount = 0;
-            foreach ($patterns as $pat) {
-                if (!empty($pat['is_default'])) {
-                    $newCode = $newSku . '-P00';
-                } else {
-                    $nonDefaultCount++;
-                    $newCode = $newSku . '-P' . str_pad($nonDefaultCount, 2, '0', STR_PAD_LEFT);
-                }
-                $this->db->table('product_pattern')->where('id', $pat['id'])->update(['pattern_code' => $newCode]);
+        try {
+            $sku = trim($data['sku'] ?? '');
+            if ($sku !== '') {
+                $dupe = $this->db->query('SELECT id FROM product WHERE sku = ? AND id != ?', [$sku, $id])->getRowArray();
+                if ($dupe) return redirect()->back()->withInput()->with('error', 'SKU "' . $sku . '" already used by another product.');
             }
-        }
 
-        return redirect()->to('products/view/' . $id)->with('success', 'Product updated');
+            $mainPartId = !empty($data['main_part_id']) ? $data['main_part_id'] : null;
+            if ($mainPartId) {
+                $partExists = $this->db->query('SELECT id FROM part WHERE id = ?', [$mainPartId])->getRowArray();
+                if (!$partExists) $mainPartId = null;
+            }
+
+            $productData = [
+                'name' => $data['name'] ?? '',
+                'short_name' => trim($data['short_name'] ?? '') ?: null,
+                'sku' => $data['sku'] ?? '',
+                'tamil_name' => $data['tamil_name'] ?? '',
+                'product_type_id' => !empty($data['product_type_id']) ? $data['product_type_id'] : null,
+                'body_id' => !empty($data['body_id']) ? $data['body_id'] : null,
+                'main_part_id' => $mainPartId,
+                'pidi' => $data['pidi'] ?? '',
+            ];
+
+            // Handle image upload or removal
+            $image = $this->request->getFile('product_image');
+            if ($image && $image->isValid() && !$image->hasMoved()) {
+                $newName = $image->getRandomName();
+                $uploadPath = FCPATH . 'uploads/products';
+                if (!is_dir($uploadPath)) mkdir($uploadPath, 0777, true);
+                $image->move($uploadPath, $newName);
+                $productData['image'] = $newName;
+            } elseif (!empty($data['remove_image'])) {
+                $productData['image'] = null;
+            }
+
+            // Fetch old SKU before updating
+            $oldRow = $this->db->query('SELECT sku FROM product WHERE id = ?', [$id])->getRowArray();
+            $oldSku = $oldRow ? ($oldRow['sku'] ?? '') : '';
+
+            $this->db->table('product')->where('id', $id)->update($productData);
+            $this->db->query('DELETE FROM product_bill_of_material WHERE product_id = ?', [$id]);
+            $this->saveBom($id, $data);
+
+            // Regenerate pattern codes if SKU changed to a non-empty value
+            $newSku = trim($data['sku'] ?? '');
+            if ($newSku !== '' && $newSku !== trim((string)$oldSku)) {
+                $patterns = $this->db->query(
+                    'SELECT id, is_default FROM product_pattern WHERE product_id = ? ORDER BY is_default DESC, id ASC',
+                    [$id]
+                )->getResultArray();
+                $nonDefaultCount = 0;
+                foreach ($patterns as $pat) {
+                    if (!empty($pat['is_default'])) {
+                        $newCode = $newSku . '-P00';
+                    } else {
+                        $nonDefaultCount++;
+                        $newCode = $newSku . '-P' . str_pad($nonDefaultCount, 2, '0', STR_PAD_LEFT);
+                    }
+                    $this->db->table('product_pattern')->where('id', $pat['id'])->update(['pattern_code' => $newCode]);
+                }
+            }
+
+            return redirect()->to('products/view/' . $id)->with('success', 'Product updated');
+        } catch (\Exception $e) {
+            log_message('error', 'Product update failed for ID ' . $id . ': ' . $e->getMessage());
+            return redirect()->back()->withInput()->with('error', 'Update failed: ' . $e->getMessage());
+        }
     }
 
     private function saveBom($productId, $data)
@@ -355,8 +368,10 @@ class Products extends BaseController
                 'part_pcs' => $data['bom_part_pcs'][$i] ?? null,
                 'scale' => $data['bom_scale'][$i] ?? null,
                 'variation_group' => $vg,
-                'podi_id' => $data['bom_podi_id'][$i] ?: null,
+                'podi_id' => !empty($data['bom_podi_id'][$i]) ? $data['bom_podi_id'][$i] : null,
                 'podi_pcs' => $data['bom_podi_pcs'][$i] ?? null,
+                'created_by' => $this->currentUser(),
+                'created_at' => date('Y-m-d H:i:s'),
             ]);
         }
     }
@@ -408,6 +423,8 @@ class Products extends BaseController
             'body_id' => $bodyId,
             'main_part_id' => $mainPartId,
             'pidi' => $src['pidi'],
+            'created_by' => $this->currentUser(),
+            'created_at' => date('Y-m-d H:i:s'),
         ]);
         $newId = $this->db->insertID();
 
@@ -421,6 +438,8 @@ class Products extends BaseController
         foreach ($bomRows as $row) {
             unset($row['id']);
             $row['product_id'] = $newId;
+            $row['created_by'] = $this->currentUser();
+            $row['created_at'] = date('Y-m-d H:i:s');
             $this->db->table('product_bill_of_material')->insert($row);
         }
 
@@ -430,6 +449,8 @@ class Products extends BaseController
             $oldCbomId = $cbomRow['id'];
             unset($cbomRow['id']);
             $cbomRow['product_id'] = $newId;
+            $cbomRow['created_by'] = $this->currentUser();
+            $cbomRow['created_at'] = date('Y-m-d H:i:s');
             $this->db->table('product_customize_bill_of_material')->insert($cbomRow);
             $newCbomId = $this->db->insertID();
 
@@ -438,6 +459,8 @@ class Products extends BaseController
             foreach ($qtyRows as $qty) {
                 unset($qty['id']);
                 $qty['product_customize_bill_of_material_id'] = $newCbomId;
+                $qty['created_by'] = $this->currentUser();
+                $qty['created_at'] = date('Y-m-d H:i:s');
                 $this->db->table('product_customize_bill_of_material_quantity')->insert($qty);
             }
         }
@@ -458,6 +481,8 @@ class Products extends BaseController
                 $nonDefaultCount++;
                 $pat['pattern_code'] = $codePrefix . '-P' . str_pad($nonDefaultCount, 2, '0', STR_PAD_LEFT);
             }
+            $pat['created_by'] = $this->currentUser();
+            $pat['created_at'] = date('Y-m-d H:i:s');
             $this->db->table('product_pattern')->insert($pat);
             $newPatId = $this->db->insertID();
 
@@ -465,6 +490,8 @@ class Products extends BaseController
             foreach ($changes as $ch) {
                 unset($ch['id']);
                 $ch['product_pattern_id'] = $newPatId;
+                $ch['created_by'] = $this->currentUser();
+                $ch['created_at'] = date('Y-m-d H:i:s');
                 $this->db->table('product_pattern_bom_change')->insert($ch);
             }
         }
@@ -544,6 +571,8 @@ class Products extends BaseController
                     'product_id' => $id,
                     'part_id' => $partId,
                     'podi_id' => $data['cbom_podi_id'][$i] ?: null,
+                    'created_by' => $this->currentUser(),
+                    'created_at' => date('Y-m-d H:i:s'),
                 ]);
                 $cbomId = $this->db->insertID();
                 foreach ($variationIds as $vid) {
@@ -555,6 +584,8 @@ class Products extends BaseController
                             'variation_id' => $vid,
                             'part_quantity' => $pq ?: 0,
                             'podi_quantity' => $dq ?: 0,
+                            'created_by' => $this->currentUser(),
+                            'created_at' => date('Y-m-d H:i:s'),
                         ]);
                     }
                 }
@@ -589,6 +620,8 @@ class Products extends BaseController
                 'variation_group' => $item['variation_group'],
                 'podi_id' => $item['podi_id'],
                 'podi_pcs' => $item['podi_pcs'],
+                'created_by' => $this->currentUser(),
+                'created_at' => date('Y-m-d H:i:s'),
             ]);
         }
 
@@ -620,6 +653,8 @@ class Products extends BaseController
                 'product_id' => $id,
                 'part_id' => $item['part_id'],
                 'podi_id' => $item['podi_id'],
+                'created_by' => $this->currentUser(),
+                'created_at' => date('Y-m-d H:i:s'),
             ]);
             $cbomId = $this->db->insertID();
             $count++;
@@ -632,6 +667,8 @@ class Products extends BaseController
                         'variation_id' => $vid,
                         'part_quantity' => $qty['part_quantity'] ?? 0,
                         'podi_quantity' => $qty['podi_quantity'] ?? 0,
+                        'created_by' => $this->currentUser(),
+                        'created_at' => date('Y-m-d H:i:s'),
                     ]);
                 }
             }
@@ -674,7 +711,7 @@ class Products extends BaseController
             if ($existing) {
                 $patternNameId = $existing['id'];
             } else {
-                $this->db->table('pattern_name')->insert(['name' => trim($data['new_pattern_name']), 'tamil_name' => $data['new_pattern_tamil'] ?? '']);
+                $this->db->table('pattern_name')->insert(['name' => trim($data['new_pattern_name']), 'tamil_name' => $data['new_pattern_tamil'] ?? '', 'created_by' => $this->currentUser(), 'created_at' => date('Y-m-d H:i:s')]);
                 $patternNameId = $this->db->insertID();
             }
         }
@@ -708,6 +745,8 @@ class Products extends BaseController
             'short_name' => $patShortName !== '' ? $patShortName : null,
             'tamil_name' => $data['new_pattern_tamil'] ?? '',
             'is_default' => 0,
+            'created_by' => $this->currentUser(),
+            'created_at' => date('Y-m-d H:i:s'),
         ];
         $patImage = $this->request->getFile('pattern_image');
         if ($patImage && $patImage->isValid() && !$patImage->hasMoved()) {
@@ -737,6 +776,8 @@ class Products extends BaseController
                     'podi_id' => $item['podi_id'] ?? null,
                     'podi_pcs' => $item['podi_pcs'] ?? 0,
                     'replace_part_id' => null,
+                    'created_by' => $this->currentUser(),
+                    'created_at' => date('Y-m-d H:i:s'),
                 ]);
             }
         }
@@ -820,6 +861,8 @@ class Products extends BaseController
                     'podi_id' => $item['podi_id'],
                     'podi_pcs' => $item['podi_pcs'],
                     'replace_part_id' => null,
+                    'created_by' => $this->currentUser(),
+                    'created_at' => date('Y-m-d H:i:s'),
                 ]);
                 $totalCount++;
             }
@@ -854,6 +897,8 @@ class Products extends BaseController
                     'podi_id' => $data['change_podi_id'][$i] ?: null,
                     'podi_pcs' => $data['change_podi_pcs'][$i] ?? null,
                     'replace_part_id' => $data['change_replace_part_id'][$i] ?: null,
+                    'created_by' => $this->currentUser(),
+                    'created_at' => date('Y-m-d H:i:s'),
                 ]);
             }
         }
@@ -935,23 +980,47 @@ class Products extends BaseController
     public function bulkPreview()
     {
         $file = $this->request->getFile('csv_file');
-        if (!$file || !$file->isValid() || $file->getClientExtension() !== 'csv') {
-            return redirect()->to('products/bulkEdit')->with('error', 'Please upload a valid .csv file.');
+        if (!$file || !$file->isValid()) {
+            return redirect()->to('products/bulkEdit')->with('error', 'Please upload a valid file.');
         }
-        if ($file->getSize() > 2 * 1024 * 1024) {
-            return redirect()->to('products/bulkEdit')->with('error', 'File too large (max 2 MB).');
+        $ext = strtolower($file->getClientExtension());
+        if (!in_array($ext, ['csv', 'xlsx'])) {
+            return redirect()->to('products/bulkEdit')->with('error', 'Only CSV and XLSX files are supported.');
+        }
+        if ($file->getSize() > 5 * 1024 * 1024) {
+            return redirect()->to('products/bulkEdit')->with('error', 'File too large (max 5 MB).');
         }
 
-        $handle = fopen($file->getTempName(), 'r');
-        $bom = fread($handle, 3);
-        if ($bom !== "\xEF\xBB\xBF") rewind($handle);
+        $tmpPath = $file->getTempName();
 
-        $header = fgetcsv($handle);
+        // Read file using PhpSpreadsheet for both CSV and XLSX
+        require_once ROOTPATH . 'vendor/autoload.php';
+        if ($ext === 'csv') {
+            $reader = new \PhpOffice\PhpSpreadsheet\Reader\Csv();
+            $sample = file_get_contents($tmpPath, false, null, 0, 4096);
+            if (str_starts_with($sample, "\xEF\xBB\xBF")) {
+                $reader->setInputEncoding('UTF-8');
+            } elseif (mb_check_encoding($sample, 'UTF-8')) {
+                $reader->setInputEncoding('UTF-8');
+            } else {
+                $reader->setInputEncoding('Windows-1252');
+            }
+        } else {
+            $reader = new \PhpOffice\PhpSpreadsheet\Reader\Xlsx();
+        }
+        $spreadsheet = $reader->load($tmpPath);
+        $sheet       = $spreadsheet->getActiveSheet();
+        $allRows     = $sheet->toArray(null, true, true, false);
+
+        if (empty($allRows)) {
+            return redirect()->to('products/bulkEdit')->with('error', 'The uploaded file is empty.');
+        }
+
+        $header = array_map('trim', array_map('strval', $allRows[0]));
         $expected = ['product_id','product_sku','product_name','product_tamil_name','product_short_name',
                      'pattern_id','pattern_name','pattern_tamil_name','pattern_short_name'];
         if ($header !== $expected) {
-            fclose($handle);
-            return redirect()->to('products/bulkEdit')->with('error', 'CSV columns do not match the template. Please re-download the template.');
+            return redirect()->to('products/bulkEdit')->with('error', 'Columns do not match the template. Please re-download the template.');
         }
 
         $products   = array_column($this->db->query('SELECT id, sku, name, tamil_name, short_name FROM product')->getResultArray(), null, 'id');
@@ -964,28 +1033,28 @@ class Products extends BaseController
         $patternMap = array_column($patternRows, null, 'id');
 
         $changes = [];
-        $rowNum  = 1;
         $errors  = [];
 
-        while (($row = fgetcsv($handle)) !== false) {
-            $rowNum++;
-            if (count($row) < 9) { $errors[] = "Row $rowNum: too few columns."; continue; }
+        foreach ($allRows as $rowNum => $row) {
+            if ($rowNum === 0) continue; // skip header
+            $displayRow = $rowNum + 1;
+            if (count($row) < 9) { $errors[] = "Row $displayRow: too few columns."; continue; }
             $pid  = (int)$row[0];
             $ptid = (int)$row[5];
-            if (!isset($products[$pid]))    { $errors[] = "Row $rowNum: product_id $pid not found.";  continue; }
-            if (!isset($patternMap[$ptid])) { $errors[] = "Row $rowNum: pattern_id $ptid not found."; continue; }
-            if ($patternMap[$ptid]['product_id'] != $pid) { $errors[] = "Row $rowNum: pattern $ptid does not belong to product $pid."; continue; }
+            if (!isset($products[$pid]))    { $errors[] = "Row $displayRow: product_id $pid not found.";  continue; }
+            if (!isset($patternMap[$ptid])) { $errors[] = "Row $displayRow: pattern_id $ptid not found."; continue; }
+            if ($patternMap[$ptid]['product_id'] != $pid) { $errors[] = "Row $displayRow: pattern $ptid does not belong to product $pid."; continue; }
 
             $cur    = $products[$pid];
             $curPat = $patternMap[$ptid];
 
-            $newSku      = trim($row[1]);
-            $newName     = trim($row[2]);
-            $newTamil    = trim($row[3]);
-            $newShort    = trim($row[4]);
-            $newPatName  = trim($row[6]);
-            $newPatTamil = trim($row[7]);
-            $newPatShort = trim($row[8]);
+            $newSku      = trim((string)($row[1] ?? ''));
+            $newName     = trim((string)($row[2] ?? ''));
+            $newTamil    = trim((string)($row[3] ?? ''));
+            $newShort    = trim((string)($row[4] ?? ''));
+            $newPatName  = trim((string)($row[6] ?? ''));
+            $newPatTamil = trim((string)($row[7] ?? ''));
+            $newPatShort = trim((string)($row[8] ?? ''));
 
             $dbSku      = trim((string)($cur['sku']               ?? ''));
             $dbName     = trim((string)($cur['name']              ?? ''));
@@ -1026,7 +1095,6 @@ class Products extends BaseController
                 'pat_changed'   => $patChanged,
             ];
         }
-        fclose($handle);
 
         if (!empty($errors)) {
             return redirect()->to('products/bulkEdit')->with('error', implode('<br>', array_slice($errors, 0, 10)));
@@ -1087,7 +1155,7 @@ class Products extends BaseController
                     if ($existing) {
                         $patternNameId = $existing['id'];
                     } else {
-                        $this->db->table('pattern_name')->insert(['name' => $ch['new_pat_name'], 'tamil_name' => $ch['new_pat_tamil']]);
+                        $this->db->table('pattern_name')->insert(['name' => $ch['new_pat_name'], 'tamil_name' => $ch['new_pat_tamil'], 'created_by' => $this->currentUser(), 'created_at' => date('Y-m-d H:i:s')]);
                         $patternNameId = $this->db->insertID();
                     }
                 }

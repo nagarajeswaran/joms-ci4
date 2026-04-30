@@ -106,7 +106,7 @@
     <div class="col-md-6">
         <div class="card h-100">
             <div class="card-header bg-info text-white">
-                <strong><i class="bi bi-upload"></i> Step 2 — Upload Filled CSV</strong>
+                <strong><i class="bi bi-upload"></i> Step 2 — Upload Filled CSV / XLSX</strong>
             </div>
             <div class="card-body d-flex flex-column">
                 <p class="text-muted mb-3" style="font-size:13px;">
@@ -116,9 +116,9 @@
                 <form action="<?= base_url('products/bulkPreview') ?>" method="post" enctype="multipart/form-data" class="flex-grow-1 d-flex flex-column justify-content-between">
                     <?= csrf_field() ?>
                     <div>
-                        <label class="form-label fw-bold">Select CSV File</label>
-                        <input type="file" name="csv_file" class="form-control" accept=".csv" required>
-                        <div class="form-text">Max 2 MB. Must be saved as <code>.csv</code> (UTF-8). Column order must match the template.</div>
+                        <label class="form-label fw-bold">Select CSV / XLSX File</label>
+                        <input type="file" name="csv_file" class="form-control" accept=".csv,.xlsx" required>
+                        <div class="form-text">Max 5 MB. Supports <code>.csv</code> (UTF-8) or <code>.xlsx</code>. Column order must match the template.</div>
                     </div>
                     <button type="submit" class="btn btn-info text-white mt-4">
                         <i class="bi bi-eye"></i> Preview Changes
