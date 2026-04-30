@@ -67,3 +67,24 @@ Additionally, make sure that the following extensions are enabled in your PHP:
 - json (enabled by default - don't turn it off)
 - [mysqlnd](http://php.net/manual/en/mysqlnd.install.php) if you plan to use MySQL
 - [libcurl](http://php.net/manual/en/curl.requirements.php) if you plan to use the HTTP\CURLRequest library
+
+## cPanel deploy notes
+
+This project's live server currently uses two separate folders:
+
+- Git repository: `/home/psboffice/repositories/joms-ci4`
+- Live site: `/home/psboffice/ci4.psboffice.com`
+
+Because the live site is not itself a Git checkout, a normal `git pull` inside the live folder will not work.
+
+To deploy the latest `main` branch changes from cPanel Terminal:
+
+```bash
+bash /home/psboffice/repositories/joms-ci4/scripts/deploy_live.sh
+```
+
+If the paths differ on another server, override them like this:
+
+```bash
+REPO_DIR=/path/to/repo LIVE_DIR=/path/to/live-site bash /path/to/repo/scripts/deploy_live.sh
+```
