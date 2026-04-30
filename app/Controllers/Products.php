@@ -983,11 +983,11 @@ class Products extends BaseController
         $file = $this->request->getFile('csv_file');
         if (!$file || !$file->isValid()) {
             $err = $file ? $file->getErrorString() : 'No file received';
-            die('<h3 style="color:red;">Upload Error: ' . $err . '</h3><p><a href="' . base_url('products/bulkEdit') . '">Go Back</a></p>');
+            return redirect()->to('products/bulkEdit')->with('error', 'Upload Error: ' . $err);
         }
         $ext = strtolower($file->getClientExtension());
         if ($ext !== 'csv') {
-            die('<h3 style="color:red;">Only CSV files are supported. You uploaded: .' . esc($ext) . '</h3><p><a href="' . base_url('products/bulkEdit') . '">Go Back</a></p>');
+            return redirect()->to('products/bulkEdit')->with('error', 'Only CSV files are supported. You uploaded: .' . esc($ext));
         }
         if ($file->getSize() > 5 * 1024 * 1024) {
             return redirect()->to('products/bulkEdit')->with('error', 'File too large (max 5 MB).');
@@ -1114,7 +1114,7 @@ class Products extends BaseController
         session()->set('bulk_changes', $changes);
         return view('products/bulk_preview', ['title' => 'Preview Changes', 'changes' => $changes]);
       } catch (\Throwable $e) {
-        die('<h3 style="color:red;">Error: ' . $e->getMessage() . '</h3><pre>' . $e->getTraceAsString() . '</pre><p><a href="' . base_url('products/bulkEdit') . '">Go Back</a></p>');
+        return redirect()->to('products/bulkEdit')->with('error', 'Error processing file: ' . $e->getMessage());
       }
     }
 
