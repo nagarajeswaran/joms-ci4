@@ -109,6 +109,31 @@ function buildUrl(array $params): string {
                         <?php if ($o['status'] !== 'closed'): ?>
                         <a href="<?= base_url('orders/split/' . $o['id']) ?>" class="btn btn-outline-secondary btn-sm" title="Split Order"><i class="bi bi-scissors"></i></a>
                         <?php endif; ?>
+                        <?php
+                        $transitions = [
+                            'draft'      => ['confirmed', 'closed'],
+                            'confirmed'  => ['production', 'draft', 'closed'],
+                            'production' => ['completed', 'confirmed', 'closed'],
+                            'completed'  => ['closed', 'production'],
+                            'closed'     => ['draft'],
+                        ];
+                        $nextStatuses = $transitions[$o['status']] ?? [];
+                        ?>
+                        <?php if (!empty($nextStatuses)): ?>
+                        <div class="btn-group">
+                            <button type="button" class="btn btn-outline-primary btn-sm dropdown-toggle" data-bs-toggle="dropdown" title="Change Status">
+                                <i class="bi bi-arrow-repeat"></i>
+                            </button>
+                            <ul class="dropdown-menu dropdown-menu-end">
+                                <li><span class="dropdown-header">Change status to:</span></li>
+                                <?php foreach ($nextStatuses as $ns): ?>
+                                <li><a class="dropdown-item" href="<?= base_url('orders/updateStatus/' . $o['id'] . '/' . $ns) ?>" onclick="return confirm('Change status to <?= ucfirst($ns) ?>?')">
+                                    <span class="badge bg-<?= $colors[$ns] ?? 'secondary' ?> me-1">&nbsp;</span> <?= ucfirst($ns) ?>
+                                </a></li>
+                                <?php endforeach; ?>
+                            </ul>
+                        </div>
+                        <?php endif; ?>
                         <a href="<?= base_url('orders/delete/' . $o['id']) ?>" class="btn btn-danger btn-sm" onclick="return confirm('Delete this order?')"><i class="bi bi-trash"></i></a>
                     </td>
                 </tr>

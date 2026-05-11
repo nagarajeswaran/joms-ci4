@@ -969,15 +969,24 @@ class Orders extends BaseController
         if (!$order) return redirect()->to('orders')->with('error', 'Not found');
 
         $allowed = [
-            'confirmed'  => 'production',
-            'production' => 'completed',
+            'draft'      => ['confirmed', 'closed'],
+            'confirmed'  => ['production', 'draft', 'closed'],
+            'production' => ['completed', 'confirmed', 'closed'],
+            'completed'  => ['closed', 'production'],
+            'closed'     => ['draft'],
         ];
-        if (!isset($allowed[$order['status']]) || $allowed[$order['status']] !== $status) {
-            return redirect()->to('orders/view/' . $id)->with('error', 'Invalid status transition');
+        if (!isset($allowed[$order['status']]) || !in_array($status, $allowed[$order['status']])) {
+            return redirect()->back()->with('error', 'Invalid status transition');
         }
 
         $this->db->table('orders')->where('id', $id)->update(['status' => $status]);
-        return redirect()->to('orders/view/' . $id)->with('success', 'Status updated to ' . ucfirst($status));
+
+        // Redirect back to referrer if from index page
+        $referer = $this->request->getServer('HTTP_REFERER');
+        if ($referer && strpos($referer, 'orders/view') !== false) {
+            return redirect()->to('orders/view/' . $id)->with('success', 'Status updated to ' . ucfirst($status));
+        }
+        return redirect()->back()->with('success', 'Status updated to ' . ucfirst($status));
     }
 
     // ========== PREVIEW ==========
