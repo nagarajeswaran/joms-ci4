@@ -127,7 +127,7 @@ function buildUrl(array $params): string {
                             <ul class="dropdown-menu dropdown-menu-end">
                                 <li><span class="dropdown-header">Change status to:</span></li>
                                 <?php foreach ($nextStatuses as $ns): ?>
-                                <li><a class="dropdown-item" href="<?= base_url('orders/updateStatus/' . $o['id'] . '/' . $ns) ?>" onclick="return confirm('Change status to <?= ucfirst($ns) ?>?')">
+                                <li><a class="dropdown-item" href="<?= base_url('orders/updateStatus/' . $o['id'] . '/' . $ns) ?>" data-turbo="false" onclick="return confirm('Change status to <?= ucfirst($ns) ?>?')">
                                     <span class="badge bg-<?= $colors[$ns] ?? 'secondary' ?> me-1">&nbsp;</span> <?= ucfirst($ns) ?>
                                 </a></li>
                                 <?php endforeach; ?>

@@ -41,7 +41,7 @@ $imgBase = upload_url('products/');
                     <button type="button" class="btn btn-outline-primary btn-sm dropdown-toggle" data-bs-toggle="dropdown"><i class="bi bi-arrow-repeat"></i> Change Status</button>
                     <ul class="dropdown-menu">
                         <?php foreach ($nextStatuses as $ns): ?>
-                        <li><a class="dropdown-item" href="<?= base_url('orders/updateStatus/' . $order['id'] . '/' . $ns) ?>" onclick="return confirm('Change status to <?= ucfirst($ns) ?>?')">
+                        <li><a class="dropdown-item" href="<?= base_url('orders/updateStatus/' . $order['id'] . '/' . $ns) ?>" data-turbo="false" onclick="return confirm('Change status to <?= ucfirst($ns) ?>?')">
                             <span class="badge bg-<?= $colors[$ns] ?? 'secondary' ?> me-1">&nbsp;</span> <?= ucfirst($ns) ?>
                         </a></li>
                         <?php endforeach; ?>
