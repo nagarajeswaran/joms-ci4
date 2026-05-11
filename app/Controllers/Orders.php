@@ -735,6 +735,7 @@ class Orders extends BaseController
     {
         $order = $this->_getOrder($id);
         if (!$order) return redirect()->to('orders')->with('error', 'Not found');
+        if ($order['status'] !== 'draft') return redirect()->to('orders')->with('error', 'Only draft orders can be deleted');
 
         $this->db->transStart();
         $itemIds = array_column(

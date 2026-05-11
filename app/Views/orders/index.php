@@ -134,7 +134,9 @@ function buildUrl(array $params): string {
                             </ul>
                         </div>
                         <?php endif; ?>
-                        <a href="<?= base_url('orders/delete/' . $o['id']) ?>" class="btn btn-danger btn-sm" onclick="return confirm('Delete this order?')"><i class="bi bi-trash"></i></a>
+                        <?php if ($o['status'] === 'draft'): ?>
+                        <a href="<?= base_url('orders/delete/' . $o['id']) ?>" class="btn btn-danger btn-sm" onclick="return confirm('Are you sure you want to DELETE order &quot;<?= esc($o['title']) ?>&quot;? This cannot be undone!')"><i class="bi bi-trash"></i></a>
+                        <?php endif; ?>
                     </td>
                 </tr>
                 <?php endforeach; ?>
