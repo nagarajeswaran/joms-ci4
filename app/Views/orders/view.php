@@ -26,6 +26,28 @@ $imgBase = upload_url('products/');
             </div>
             <div class="d-flex gap-2 flex-wrap align-items-center">
                 <span class="badge bg-<?= $sc ?> fs-6"><?= ucfirst($order['status']) ?></span>
+                <?php
+                $transitions = [
+                    'draft'      => ['confirmed', 'closed'],
+                    'confirmed'  => ['production', 'draft', 'closed'],
+                    'production' => ['completed', 'confirmed', 'closed'],
+                    'completed'  => ['closed', 'production', 'draft'],
+                    'closed'     => ['draft'],
+                ];
+                $colors = ['draft'=>'secondary','confirmed'=>'primary','production'=>'warning','completed'=>'success','closed'=>'dark'];
+                $nextStatuses = $transitions[$order['status']] ?? [];
+                if (!empty($nextStatuses)): ?>
+                <div class="btn-group">
+                    <button type="button" class="btn btn-outline-primary btn-sm dropdown-toggle" data-bs-toggle="dropdown"><i class="bi bi-arrow-repeat"></i> Change Status</button>
+                    <ul class="dropdown-menu">
+                        <?php foreach ($nextStatuses as $ns): ?>
+                        <li><a class="dropdown-item" href="<?= base_url('orders/updateStatus/' . $order['id'] . '/' . $ns) ?>" onclick="return confirm('Change status to <?= ucfirst($ns) ?>?')">
+                            <span class="badge bg-<?= $colors[$ns] ?? 'secondary' ?> me-1">&nbsp;</span> <?= ucfirst($ns) ?>
+                        </a></li>
+                        <?php endforeach; ?>
+                    </ul>
+                </div>
+                <?php endif; ?>
                 <?php if ($order['status'] === 'draft'): ?>
                     <a href="<?= base_url('orders/edit/' . $order['id']) ?>" class="btn btn-warning btn-sm"><i class="bi bi-pencil"></i> Edit Header</a>
                     <?php if (!empty($items)): ?>
@@ -40,11 +62,6 @@ $imgBase = upload_url('products/');
                     <a href="<?= base_url('orders/orderSheet/' . $order['id']) ?>" class="btn btn-info btn-sm"><i class="bi bi-file-earmark-text"></i> Order Sheet</a>
                     <a href="<?= base_url('orders/touchAnalysis/' . $order['id']) ?>" class="btn btn-outline-warning btn-sm"><i class="bi bi-droplet"></i> Touch Analysis</a>
                     <button type="button" id="touchToggleBtn" class="btn btn-outline-warning btn-sm" onclick="toggleTouchMode()"><i class="bi bi-droplet"></i> Show Touch %</button>
-                    <?php if ($order['status'] === 'confirmed'): ?>
-                    <a href="<?= base_url('orders/updateStatus/' . $order['id'] . '/production') ?>" class="btn btn-warning btn-sm" onclick="return confirm('Move to Production?')"><i class="bi bi-arrow-right"></i> Production</a>
-                    <?php elseif ($order['status'] === 'production'): ?>
-                    <a href="<?= base_url('orders/updateStatus/' . $order['id'] . '/completed') ?>" class="btn btn-success btn-sm" onclick="return confirm('Mark as Completed?')"><i class="bi bi-check-circle"></i> Complete</a>
-                    <?php endif; ?>
                 <?php endif; ?>
                 <?php if ($order['status'] !== 'closed'): ?>
                 <a href="<?= base_url('orders/split/' . $order['id']) ?>" class="btn btn-outline-secondary btn-sm" title="Split this order into two"><i class="bi bi-scissors"></i> Split</a>

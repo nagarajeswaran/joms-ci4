@@ -973,7 +973,7 @@ class Orders extends BaseController
             'draft'      => ['confirmed', 'closed'],
             'confirmed'  => ['production', 'draft', 'closed'],
             'production' => ['completed', 'confirmed', 'closed'],
-            'completed'  => ['closed', 'production'],
+            'completed'  => ['closed', 'production', 'draft'],
             'closed'     => ['draft'],
         ];
         if (!isset($allowed[$order['status']]) || !in_array($status, $allowed[$order['status']])) {
