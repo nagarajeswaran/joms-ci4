@@ -167,7 +167,7 @@ foreach ($items as $_itm) {
                                    style="width:65px;margin:auto;"
                                    oninput="this.value=this.value.replace(/[^0-9]/g,'');calcAllWeights();">
                             <?php else: ?>
-                            <span class="<?= ($item['qty_map'][$v['id']] ?? 0) > 0 ? 'fw-bold' : 'text-muted' ?>">
+                            <span class="qty-display <?= ($item['qty_map'][$v['id']] ?? 0) > 0 ? 'fw-bold' : 'text-muted' ?>" data-vid="<?= $v['id'] ?>" data-qty="<?= (int)($item['qty_map'][$v['id']] ?? 0) ?>">
                                 <?= ($item['qty_map'][$v['id']] ?? 0) > 0 ? (int)$item['qty_map'][$v['id']] : '—' ?>
                             </span>
                             <?php endif; ?>
@@ -343,6 +343,8 @@ function calcAllWeights() {
         var wmap = {};
         try { wmap = JSON.parse(wmapRaw); } catch(e) {}
         var itemWt = 0;
+
+        // Editable inputs
         card.querySelectorAll('input.qty-input').forEach(function(inp) {
             var m = inp.name.match(/qty\[(\d+)\]/);
             if (m) {
@@ -354,6 +356,18 @@ function calcAllWeights() {
                 if (varSpan) varSpan.textContent = varWt.toFixed(4);
             }
         });
+
+        // Read-only spans (when canEdit is false)
+        card.querySelectorAll('span.qty-display').forEach(function(sp) {
+            var vid = sp.dataset.vid;
+            var qty = parseFloat(sp.dataset.qty) || 0;
+            var wpp = parseFloat(wmap[vid]) || 0;
+            var varWt = qty * wpp;
+            itemWt += varWt;
+            var varSpan = card.querySelector('.var-wt-value[data-vid="' + vid + '"]');
+            if (varSpan) varSpan.textContent = varWt.toFixed(4);
+        });
+
         var badge = card.querySelector('.item-wt-value');
         if (badge) badge.textContent = itemWt.toFixed(4);
         grand += itemWt;
@@ -387,8 +401,9 @@ function calcAllWeights() {
     document.querySelectorAll('.order-item-card').forEach(function(card) {
         var cardGroupTotals = {};
         var cardTotal = 0;
+
+        // From editable inputs
         card.querySelectorAll('input.qty-input').forEach(function(inp) {
-            // Group label div is a direct sibling BEFORE the table inside .table-responsive
             var table = inp.closest('table');
             var grp = '';
             if (table) {
@@ -401,6 +416,22 @@ function calcAllWeights() {
             grandGroups[grp] = (grandGroups[grp] || 0) + qty;
             grandTotal += qty;
         });
+
+        // From read-only spans
+        card.querySelectorAll('span.qty-display').forEach(function(sp) {
+            var table = sp.closest('table');
+            var grp = '';
+            if (table) {
+                var prev = table.previousElementSibling;
+                if (prev) grp = prev.textContent.trim();
+            }
+            var qty = parseInt(sp.dataset.qty) || 0;
+            cardGroupTotals[grp] = (cardGroupTotals[grp] || 0) + qty;
+            cardTotal += qty;
+            grandGroups[grp] = (grandGroups[grp] || 0) + qty;
+            grandTotal += qty;
+        });
+
         // Update per-card group spans
         card.querySelectorAll('.item-grp-total').forEach(function(el) {
             el.textContent = cardGroupTotals[el.dataset.group] || 0;
