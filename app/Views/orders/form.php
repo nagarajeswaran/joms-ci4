@@ -19,6 +19,15 @@
                 </select>
             </div>
             <div class="mb-3">
+                <label class="form-label">Stamp</label>
+                <select class="form-select" name="stamp_id">
+                    <option value="">-- No Stamp --</option>
+                    <?php foreach ($stamps as $st): ?>
+                    <option value="<?= $st['id'] ?>" <?= ($item['stamp_id'] ?? '') == $st['id'] ? 'selected' : '' ?>><?= esc($st['name']) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <div class="mb-3">
                 <label class="form-label">Notes</label>
                 <textarea class="form-control" name="notes" rows="3"><?= esc($item['notes'] ?? '') ?></textarea>
             </div>

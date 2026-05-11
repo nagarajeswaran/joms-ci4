@@ -16,9 +16,10 @@ class Orders extends BaseController
     private function _getOrder($id)
     {
         return $this->db->query('
-            SELECT o.*, c.name as client_name
+            SELECT o.*, c.name as client_name, s.name as stamp_name
             FROM orders o
             LEFT JOIN client c ON c.id = o.client_id
+            LEFT JOIN stamp s ON s.id = o.stamp_id
             WHERE o.id = ?
         ', [$id])->getRowArray();
     }
@@ -672,6 +673,7 @@ class Orders extends BaseController
         return view('orders/form', [
             'title'   => 'Create Order',
             'clients' => $this->db->query('SELECT id, name FROM client ORDER BY name')->getResultArray(),
+            'stamps'  => $this->db->query('SELECT id, name FROM stamp ORDER BY name')->getResultArray(),
         ]);
     }
 
@@ -681,6 +683,7 @@ class Orders extends BaseController
         $this->db->table('orders')->insert([
             'title'      => trim($d['title'] ?? ''),
             'client_id'  => $d['client_id'] ?: null,
+            'stamp_id'   => $d['stamp_id'] ?: null,
             'notes'      => $d['notes'] ?? '',
             'status'     => 'draft',
             'created_by' => $this->currentUser(),
@@ -703,6 +706,7 @@ class Orders extends BaseController
             'title'   => 'Edit Order',
             'item'    => $order,
             'clients' => $this->db->query('SELECT id, name FROM client ORDER BY name')->getResultArray(),
+            'stamps'  => $this->db->query('SELECT id, name FROM stamp ORDER BY name')->getResultArray(),
         ]);
     }
 
@@ -714,6 +718,7 @@ class Orders extends BaseController
         $this->db->table('orders')->where('id', $id)->update([
             'title'     => trim($d['title'] ?? ''),
             'client_id' => $d['client_id'] ?: null,
+            'stamp_id'  => $d['stamp_id'] ?: null,
             'notes'     => $d['notes'] ?? '',
         ]);
         return redirect()->to('orders/view/' . $id)->with('success', 'Order updated');
@@ -755,7 +760,7 @@ class Orders extends BaseController
                    p.product_type_id, p.main_part_id,
                    pt.name as type_name, pt.variations as pt_variations, pt.multiplication_factor,
                    b.clasp_size, b.name as body_name,
-                   pp.name as pattern_name,
+                   pp.name as pattern_name, pp.tamil_name as pattern_tamil_name,
                    s.name as stamp_name
             FROM order_items oi
             JOIN product p ON p.id = oi.product_id
@@ -840,7 +845,7 @@ class Orders extends BaseController
                 'order_id'   => $orderId,
                 'product_id' => $productId,
                 'pattern_id' => $entry['pattern_id'] ?: null,
-                'stamp_id'   => $entry['stamp_id'] ?: null,
+                'stamp_id'   => $order['stamp_id'] ?: null,
                 'sort_order' => $maxSort,
                 'created_by' => $this->currentUser(),
                 'created_at' => date('Y-m-d H:i:s'),
@@ -2701,10 +2706,73 @@ class Orders extends BaseController
         return $this->response->setJSON(['products' => $this->db->query($sql, $params)->getResultArray()]);
     }
 
+    public function searchPatterns()
+    {
+        $q = trim((string)($this->request->getPost('q') ?? ''));
+        $typeId = $this->request->getPost('product_type_id') ?? '';
+        if ($q === '' && !$typeId) {
+            return $this->response->setJSON(['patterns' => []]);
+        }
+
+        $sql = 'SELECT
+                pp.id,
+                pp.product_id,
+                pp.name,
+                pp.tamil_name,
+                pp.pattern_code,
+                pp.is_default,
+                p.name AS product_name,
+                p.sku,
+                p.image,
+                pt.name AS type_name,
+                b.name AS body_name
+            FROM product_pattern pp
+            JOIN product p ON p.id = pp.product_id
+            LEFT JOIN product_type pt ON pt.id = p.product_type_id
+            LEFT JOIN body b ON b.id = p.body_id
+            WHERE 1 = 1';
+        $params = [];
+
+        if ($q !== '') {
+            $like = '%' . $q . '%';
+            $sql .= '
+                AND (
+                    pp.name LIKE ?
+                    OR pp.tamil_name LIKE ?
+                    OR pp.pattern_code LIKE ?
+                    OR p.name LIKE ?
+                    OR p.sku LIKE ?
+                )';
+            $params = [$like, $like, $like, $like, $like];
+        }
+
+        if ($typeId) {
+            $sql .= ' AND p.product_type_id = ?';
+            $params[] = $typeId;
+        }
+
+        $sql .= '
+            ORDER BY
+                CASE WHEN pp.is_default = 1 THEN 0 ELSE 1 END,
+                p.name,
+                pp.name
+            LIMIT 30';
+
+        $rows = $this->db->query($sql, $params)->getResultArray();
+
+        return $this->response->setJSON(['patterns' => $rows]);
+    }
+
     public function getProductPatterns()
     {
         $productId = $this->request->getPost('product_id');
-        $rows = $this->db->query('SELECT id, name, tamil_name, is_default FROM product_pattern WHERE product_id = ? ORDER BY is_default DESC, name', [$productId])->getResultArray();
+        $rows = $this->db->query(
+            'SELECT id, product_id, name, tamil_name, pattern_code, is_default
+             FROM product_pattern
+             WHERE product_id = ?
+             ORDER BY is_default DESC, name',
+            [$productId]
+        )->getResultArray();
         return $this->response->setJSON(['patterns' => $rows]);
     }
 

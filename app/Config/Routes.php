@@ -5,7 +5,10 @@ use CodeIgniter\Router\RouteCollection;
 /**
  * @var RouteCollection $routes
  */
-$routes->get('/', 'ProductTypes::index');
+$routes->get('/', 'AdminDashboard::hub');
+$routes->get('admin/hub', 'AdminDashboard::hub');
+$routes->get('admin/zone/clear', 'AdminDashboard::clearZone');
+$routes->get('admin/zone/(:segment)', 'AdminDashboard::setZone/$1');
 $routes->match(['get', 'post'], 'login', 'Login::index');
 $routes->get('logout', 'Login::logout');
 
@@ -173,6 +176,7 @@ $routes->get('orders/orderSheetSlipWithPartsPdf/(:num)', 'Orders::orderSheetSlip
 $routes->get('orders/partRequirementsPdf/(:num)',  'Orders::partRequirementsPdf/$1');
 $routes->post('orders/saveTouchAnalysis/(:num)',   'Orders::saveTouchAnalysis/$1');
 $routes->post('orders/searchProducts', 'Orders::searchProducts');
+$routes->post('orders/searchPatterns', 'Orders::searchPatterns');
 $routes->get('orders/combined-main-part-setup',    'Orders::combinedMainPartSetup');
 $routes->post('orders/combined-part-requirements', 'Orders::combinedPartRequirements');
 $routes->post('orders/getProductPatterns', 'Orders::getProductPatterns');
@@ -387,6 +391,8 @@ $routes->post('part-orders/(:num)/save-allocation',         'PartOrder::saveAllo
 $routes->get('part-orders/(:num)/delete-allocation/(:num)', 'PartOrder::deleteAllocation/$1/$2');
 $routes->post('part-orders/(:num)/update-display-touch',    'PartOrder::updateDisplayTouch/$1');
 $routes->get('part-orders/(:num)/manf-plan-pdf',            'PartOrder::manfPlanPdf/$1');
+$routes->get('part-orders/lookup-order',                    'PartOrder::lookupOrder');
+$routes->get('part-orders/lookup-batch',                    'PartOrder::lookupBatch');
 
 // Pending Receive Entry
 $routes->get('pending-receive-entry', 'PendingReceiveEntry::index');

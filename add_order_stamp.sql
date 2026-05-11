@@ -1,0 +1,1 @@
+ALTER TABLE orders ADD COLUMN stamp_id INT(11) DEFAULT NULL AFTER client_id;

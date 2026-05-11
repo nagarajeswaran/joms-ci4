@@ -17,13 +17,43 @@ if [ ! -d "$LIVE_DIR" ]; then
   exit 1
 fi
 
+require_path() {
+  local path="$1"
+  if [ ! -e "$path" ]; then
+    echo "Required path missing: $path" >&2
+    exit 1
+  fi
+}
+
+copy_file() {
+  local src="$1"
+  local dest="$2"
+  require_path "$src"
+  mkdir -p "$(dirname "$dest")"
+  cp "$src" "$dest"
+  echo "Copied file: $dest"
+}
+
+sync_dir() {
+  local src="$1"
+  local dest="$2"
+  require_path "$src"
+  mkdir -p "$dest"
+  rsync -av --delete "$src/" "$dest/"
+  echo "Synced dir: $dest"
+}
+
 cd "$REPO_DIR"
 git pull origin main
 
-mkdir -p "$LIVE_DIR/app/Controllers" "$LIVE_DIR/app/Views/products"
+copy_file "$REPO_DIR/composer.json" "$LIVE_DIR/composer.json"
+copy_file "$REPO_DIR/composer.lock" "$LIVE_DIR/composer.lock"
+copy_file "$REPO_DIR/spark" "$LIVE_DIR/spark"
+copy_file "$REPO_DIR/preload.php" "$LIVE_DIR/preload.php"
 
-cp "$REPO_DIR/app/Controllers/Products.php" "$LIVE_DIR/app/Controllers/Products.php"
-cp "$REPO_DIR/app/Views/products/bulk_edit.php" "$LIVE_DIR/app/Views/products/bulk_edit.php"
-cp "$REPO_DIR/app/Views/products/bulk_preview.php" "$LIVE_DIR/app/Views/products/bulk_preview.php"
+sync_dir "$REPO_DIR/app" "$LIVE_DIR/app"
+sync_dir "$REPO_DIR/public" "$LIVE_DIR/public"
+sync_dir "$REPO_DIR/system" "$LIVE_DIR/system"
+sync_dir "$REPO_DIR/writable" "$LIVE_DIR/writable"
 
 echo "Deployment complete."

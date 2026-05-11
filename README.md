@@ -77,11 +77,29 @@ This project's live server currently uses two separate folders:
 
 Because the live site is not itself a Git checkout, a normal `git pull` inside the live folder will not work.
 
-To deploy the latest `main` branch changes from cPanel Terminal:
+### Current deploy flow
+
+Run this from cPanel Terminal:
 
 ```bash
 bash /home/psboffice/repositories/joms-ci4/scripts/deploy_live.sh
 ```
+
+This script:
+
+- pulls latest `main` in the repository folder
+- copies root runtime files like `composer.json`, `composer.lock`, `spark`, `preload.php`
+- syncs `app/`, `public/`, `system/`, and `writable/` into the live site
+
+### Why this is safer
+
+The old manual deploy copied only a few product-related files, so unrelated future fixes could easily be missed.
+The new script deploys the main application directories instead of a tiny hand-picked file list.
+
+### Important note
+
+This script does not run `composer install` automatically on the server.
+If a deploy introduces new PHP dependencies, run Composer separately in the live environment as needed.
 
 If the paths differ on another server, override them like this:
 

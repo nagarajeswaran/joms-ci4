@@ -19,6 +19,7 @@ $imgBase = upload_url('products/');
                 </h5>
                 <div class="text-muted" style="font-size:13px;">
                     <?php if ($order['client_name']): ?><i class="bi bi-person"></i> <?= esc($order['client_name']) ?> &nbsp;<?php endif; ?>
+                    <?php if (!empty($order['stamp_name'])): ?><i class="bi bi-bookmark"></i> <?= esc($order['stamp_name']) ?> &nbsp;<?php endif; ?>
                     <i class="bi bi-calendar"></i> <?= date('d M Y', strtotime($order['created_at'])) ?>
                     <?php if ($order['notes']): ?>&nbsp; <i class="bi bi-sticky"></i> <?= esc($order['notes']) ?><?php endif; ?>
                 </div>
@@ -89,14 +90,6 @@ foreach ($items as $_itm) {
 </div>
 <?php endif; ?>
 
-<?php if ($canEdit): ?>
-<div class="mb-2">
-<button type="button" id="saveAllBtn" class="btn btn-success btn-sm d-none" onclick="saveAllItems()">
-    <i class="bi bi-floppy"></i> Save All Changes (<span id="dirtyCount">0</span>)
-</button>
-</div>
-<?php endif; ?>
-
 <!-- Existing Items -->
 <?php foreach ($items as $idx => $item): ?>
 <div class="card mb-3 order-item-card"
@@ -119,11 +112,9 @@ foreach ($items as $_itm) {
             <span style="width:36px;height:36px;background:#eee;border-radius:4px;display:inline-flex;align-items:center;justify-content:center;"><i class="bi bi-image text-muted"></i></span>
             <?php endif; ?>
             <div>
-                <strong><?= esc($item['product_name']) ?></strong>
+                <strong><?= esc(!empty($item['pattern_tamil_name']) ? $item['pattern_tamil_name'] : (!empty($item['pattern_name']) ? $item['pattern_name'] : $item['product_name'])) ?></strong>
                 <?php if ($item['sku']): ?><small class="text-muted ms-1">(<?= esc($item['sku']) ?>)</small><?php endif; ?>
-                <?php if ($item['type_name']): ?><span class="badge bg-light text-dark border ms-1"><?= esc($item['type_name']) ?></span><?php endif; ?>
-                <?php if ($item['pattern_name']): ?><span class="badge bg-info ms-1"><?= esc($item['pattern_name']) ?></span><?php endif; ?>
-                <?php if ($item['stamp_name']): ?><span class="badge bg-warning text-dark ms-1"><i class="bi bi-bookmark"></i> <?= esc($item['stamp_name']) ?></span><?php endif; ?>
+                <?php if ($item['body_name']): ?><span class="badge bg-secondary-subtle text-secondary border ms-1"><?= esc($item['body_name']) ?></span><?php endif; ?>
             </div>
             <!-- Est weight badge per item -->
             <span class="badge bg-success-subtle text-success border border-success-subtle ms-1" style="font-size:11px;">
@@ -141,33 +132,15 @@ foreach ($items as $_itm) {
         <?php if ($canEdit): ?>
         <form action="<?= base_url('orders/saveItemQty/' . $item['id']) ?>" method="post">
             <?= csrf_field() ?>
-            <div class="row mb-2 g-2">
-                <div class="col-md-4">
-                    <label class="form-label mb-0" style="font-size:12px;">Pattern</label>
-                    <select class="form-select form-select-sm" name="pattern_id" onchange="onExistingPatternChange(this)">
-                        <option value="">-- No Pattern (Base BOM) --</option>
-                        <?php foreach ($item['patterns'] as $pt): ?>
-                        <option value="<?= $pt['id'] ?>" <?= $item['pattern_id'] == $pt['id'] ? 'selected' : '' ?>><?= esc(!empty($pt['tamil_name']) ? $pt['tamil_name'] : $pt['name']) ?><?= $pt['is_default'] ? ' (default)' : '' ?></option>
-                        <?php endforeach; ?>
-                    </select>
-                </div>
-                <div class="col-md-4">
-                    <label class="form-label mb-0" style="font-size:12px;">Stamp</label>
-                    <select class="form-select form-select-sm" name="stamp_id">
-                        <option value="">-- No Stamp --</option>
-                        <?php foreach ($stamps as $st): ?>
-                        <option value="<?= $st['id'] ?>" <?= $item['stamp_id'] == $st['id'] ? 'selected' : '' ?>><?= esc($st['name']) ?></option>
-                        <?php endforeach; ?>
-                    </select>
-                </div>
-                <?php if ($item['same_type_prev']): ?>
-                <div class="col-md-4 d-flex align-items-end">
-                    <button type="button" class="btn btn-outline-secondary btn-sm" onclick="copyFromAbove(this)">
-                        <i class="bi bi-arrow-up"></i> Copy qty from above
-                    </button>
-                </div>
-                <?php endif; ?>
+            <input type="hidden" name="pattern_id" value="<?= $item['pattern_id'] ?? '' ?>">
+            <input type="hidden" name="stamp_id" value="<?= $order['stamp_id'] ?? '' ?>">
+            <?php if ($item['same_type_prev']): ?>
+            <div class="mb-2">
+                <button type="button" class="btn btn-outline-secondary btn-sm" onclick="copyFromAbove(this)">
+                    <i class="bi bi-arrow-up"></i> Copy qty from above
+                </button>
             </div>
+            <?php endif; ?>
         <?php endif; ?>
 
         <?php if (!empty($item['variation_groups'])): ?>
@@ -242,43 +215,62 @@ foreach ($items as $_itm) {
 <div class="text-center text-muted py-4"><i class="bi bi-box" style="font-size:2rem;"></i><br>No products added yet.</div>
 <?php endif; ?>
 
-<!-- Add Products Panel (draft + confirmed only) -->
 <?php if ($canEdit): ?>
-<div class="card mt-3" style="border:2px dashed #cdd5df;">
-    <div class="card-body">
-        <h6 class="text-muted mb-3"><i class="bi bi-plus-circle"></i> Add Products to Order</h6>
+<div class="modal fade" id="addPatternModal" tabindex="-1" aria-labelledby="addPatternModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="addPatternModalLabel"><i class="bi bi-plus-circle me-1"></i> Add Patterns to Order</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row g-2 mb-2">
+                    <div class="col-md-6">
+                        <input type="text" id="patternSearch" class="form-control form-control-sm" placeholder="Search pattern name, tamil name, code, product, or SKU...">
+                    </div>
+                    <div class="col-md-3">
+                        <select id="productTypeFilter" class="form-select form-select-sm">
+                            <option value="">-- All Types --</option>
+                            <?php foreach ($productTypes as $pt): ?>
+                            <option value="<?= $pt['id'] ?>"><?= esc($pt['name']) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="col-md-auto">
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="doSearch()"><i class="bi bi-search"></i> Search</button>
+                    </div>
+                </div>
 
-        <div class="row g-2 mb-2">
-            <div class="col-md-5">
-                <input type="text" id="productSearch" class="form-control form-control-sm" placeholder="Search product name or SKU...">
-            </div>
-            <div class="col-md-3">
-                <select id="productTypeFilter" class="form-select form-select-sm">
-                    <option value="">-- All Types --</option>
-                    <?php foreach ($productTypes as $pt): ?>
-                    <option value="<?= $pt['id'] ?>"><?= esc($pt['name']) ?></option>
-                    <?php endforeach; ?>
-                </select>
-            </div>
-            <div class="col-md-auto">
-                <button type="button" class="btn btn-secondary btn-sm" onclick="doSearch()"><i class="bi bi-search"></i> Search</button>
+                <div class="small text-muted mb-2">
+                    Search and choose a pattern first. Product will fill automatically, then other patterns from the same product will be suggested.
+                </div>
+
+                <div id="searchResults" class="mb-3"></div>
+
+                <form action="<?= base_url('orders/addItem/' . $order['id']) ?>" method="post" id="addItemsForm" style="display:none;">
+                    <?= csrf_field() ?>
+                    <div id="selectedProductForms"></div>
+                    <div class="mt-3 d-flex gap-2">
+                        <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-plus"></i> Add <span id="addCount">0</span> Pattern(s)</button>
+                        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="clearSelection()" data-bs-dismiss="modal">Cancel</button>
+                    </div>
+                </form>
             </div>
         </div>
-
-        <div id="searchResults" class="mb-3"></div>
-
-        <form action="<?= base_url('orders/addItem/' . $order['id']) ?>" method="post" id="addItemsForm" style="display:none;">
-            <?= csrf_field() ?>
-            <div id="selectedProductForms"></div>
-            <div class="mt-3 d-flex gap-2">
-                <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-plus"></i> Add <span id="addCount">0</span> Product(s)</button>
-                <button type="button" class="btn btn-outline-secondary btn-sm" onclick="clearSelection()">Cancel</button>
-            </div>
-        </form>
     </div>
 </div>
 <?php endif; ?>
-<div id="stickyWeightBar" style="position:fixed;bottom:0;left:0;right:0;z-index:1050;background:#212529;color:#fff;padding:8px 20px;display:flex;align-items:center;justify-content:flex-end;gap:16px;font-size:14px;box-shadow:0 -2px 8px rgba(0,0,0,0.3);"><span><i class="bi bi-calculator"></i> Order Est. Weight:</span><span class="fw-bold fs-6"><span id="grandEstWeightSticky">0.0000</span> g</span></div>
+<div id="stickyWeightBar" style="position:fixed;bottom:0;left:0;right:0;z-index:1050;background:#212529;color:#fff;padding:8px 20px;display:flex;align-items:center;justify-content:flex-end;gap:16px;font-size:14px;box-shadow:0 -2px 8px rgba(0,0,0,0.3);">
+    <?php if ($canEdit): ?>
+    <button type="button" class="btn btn-primary btn-sm me-auto rounded-pill" data-bs-toggle="modal" data-bs-target="#addPatternModal">
+        <i class="bi bi-plus-lg"></i> Add Pattern
+    </button>
+    <button type="button" id="saveAllBtn" class="btn btn-success btn-sm d-none rounded-pill" onclick="saveAllItems()">
+        <i class="bi bi-floppy"></i> Save All Changes (<span id="dirtyCount">0</span>)
+    </button>
+    <?php endif; ?>
+    <span><i class="bi bi-calculator"></i> Order Est. Weight:</span><span class="fw-bold fs-6"><span id="grandEstWeightSticky">0.0000</span> g</span>
+</div>
 <?php $this->endSection() ?>
 
 <?php $this->section('scripts') ?>
@@ -287,11 +279,12 @@ var _csrf_name  = '<?= csrf_token() ?>';
 var _csrf_hash  = '<?= csrf_hash() ?>';
 var _baseUrl    = '<?= base_url() ?>';
 var _orderId    = <?= (int)$order['id'] ?>;
-var _stamps     = <?= json_encode($stamps) ?>;
 var _selectedProducts = {};
 var _newFormWeightMaps = {};  // productId -> weight_map for new (unsaved) product forms
 var _vTouchMap  = <?= json_encode($variationTouchMap ?? []) ?>;
 var _touchMode  = false;
+var _selectedPatternRows = {};
+var _productSuggestionCache = {};
 
 function toggleTouchMode() {
     if (Object.keys(_vTouchMap).length === 0) {
@@ -427,43 +420,49 @@ function calcAllWeights() {
 }
 
 // Run on page load with existing values
-window.addEventListener('DOMContentLoaded', function() { calcAllWeights(); });
+window.addEventListener('turbo:load', function() { calcAllWeights(); });
+document.addEventListener('DOMContentLoaded', function() { calcAllWeights(); });
 
 // ========== SEARCH ==========
 
 function doSearch() {
-    var q  = document.getElementById('productSearch').value.trim();
+    var q  = document.getElementById('patternSearch').value.trim();
     var pt = document.getElementById('productTypeFilter').value;
-    if (!q && !pt) { document.getElementById('searchResults').innerHTML = '<small class="text-muted">Enter a name or select a type.</small>'; return; }
-    post('orders/searchProducts', {q:q, product_type_id:pt}).then(function(d) {
-        if (!d.products || !d.products.length) {
-            document.getElementById('searchResults').innerHTML = '<small class="text-muted">No products found.</small>';
+    if (!q && !pt) { document.getElementById('searchResults').innerHTML = '<small class="text-muted">Enter a pattern search.</small>'; return; }
+    post('orders/searchPatterns', {q:q, product_type_id:pt}).then(function(d) {
+        if (!d.patterns || !d.patterns.length) {
+            document.getElementById('searchResults').innerHTML = '<small class="text-muted">No patterns found.</small>';
             return;
         }
         var html = '<div class="border rounded mb-2"><table class="table table-sm table-hover mb-0" style="font-size:12px;">';
-        html += '<thead><tr><th style="width:30px;"></th><th>Name</th><th>SKU</th><th>Type</th><th>Body</th></tr></thead><tbody>';
-        d.products.forEach(function(p) {
-            var checked = _selectedProducts[p.id] ? 'checked' : '';
+        html += '<thead><tr><th style="width:30px;"></th><th>Pattern</th><th>Code</th><th>Product</th><th>SKU</th><th>Type</th></tr></thead><tbody>';
+        d.patterns.forEach(function(p) {
+            var key = p.product_id + '_' + p.id;
+            var checked = _selectedPatternRows[key] ? 'checked' : '';
             var img = p.image ? '<img src="' + _baseUrl + 'uploads/products/' + esc(p.image) + '" style="width:24px;height:24px;object-fit:cover;border-radius:3px;" class="me-1">' : '<span style="width:24px;height:24px;background:#eee;display:inline-flex;align-items:center;justify-content:center;border-radius:3px;" class="me-1"><i class="bi bi-image" style="font-size:10px;"></i></span>';
-            html += '<tr><td><input type="checkbox" class="product-cb" value="' + p.id + '" ' + checked + ' onchange="toggleProduct(' + JSON.stringify(p).replace(/"/g,'&quot;') + ', this.checked)"></td>';
-            html += '<td>' + img + esc(p.name) + '</td><td>' + esc(p.sku||'') + '</td><td>' + esc(p.type_name||'') + '</td><td>' + esc(p.body_name||'') + '</td></tr>';
+            html += '<tr><td><input type="checkbox" class="pattern-cb" value="' + key + '" ' + checked + ' onchange="togglePatternSelection(' + JSON.stringify(p).replace(/"/g,'&quot;') + ', this.checked)"></td>';
+            html += '<td>' + img + esc(p.tamil_name || p.name) + (parseInt(p.is_default) === 1 ? ' <span class="text-muted">(default)</span>' : '') + '</td><td>' + esc(p.pattern_code || '') + '</td><td>' + esc(p.product_name || '') + '</td><td>' + esc(p.sku||'') + '</td><td>' + esc(p.type_name||'') + '</td></tr>';
         });
         html += '</tbody></table></div>';
         document.getElementById('searchResults').innerHTML = html;
     });
 }
 
-// ========== SELECT PRODUCT ==========
+// ========== SELECT PATTERN ==========
 
-function toggleProduct(p, checked) {
+function togglePatternSelection(p, checked) {
     if (checked) {
-        _selectedProducts[p.id] = p;
-        addProductForm(p);
+        _selectedProducts[p.product_id] = {
+            id: p.product_id,
+            name: p.product_name,
+            sku: p.sku,
+            image: p.image,
+            type_name: p.type_name,
+            body_name: p.body_name
+        };
+        addProductForm(_selectedProducts[p.product_id], p);
     } else {
-        delete _selectedProducts[p.id];
-        delete _newFormWeightMaps[p.id];
-        var el = document.getElementById('pform_' + p.id);
-        if (el) el.remove();
+        removePatternRow(p.product_id, p.id);
     }
     updateAddCount();
     calcAllWeights();
@@ -472,14 +471,16 @@ function toggleProduct(p, checked) {
 // stores variation groups per product for reuse when checking patterns
 var _productVarGroups = {};
 
-function addProductForm(p) {
+function addProductForm(p, initialPattern) {
+    if (document.getElementById('pform_' + p.id)) {
+        ensurePatternLoaded(p.id, initialPattern);
+        return;
+    }
+
     var container = document.getElementById('selectedProductForms');
     var div = document.createElement('div');
     div.id = 'pform_' + p.id;
     div.className = 'border rounded p-2 mb-2';
-
-    var stampOpts = '<option value="">-- No Stamp --</option>' +
-        _stamps.map(function(s){ return '<option value="' + s.id + '">' + esc(s.name) + '</option>'; }).join('');
 
     div.innerHTML =
         '<div class="d-flex align-items-center gap-2 mb-2 flex-wrap">' +
@@ -487,11 +488,9 @@ function addProductForm(p) {
         '<small class="text-muted">' + esc(p.sku||'') + '</small>' +
         '<span class="badge bg-light text-dark border">' + esc(p.type_name||'') + '</span>' +
         '</div>' +
-        '<div class="row g-2 mb-2">' +
-        '<div class="col-md-4"><label style="font-size:12px;">Stamp <small class="text-muted">(shared)</small></label>' +
-        '<select class="form-select form-select-sm" id="stamp_' + p.id + '">' + stampOpts + '</select></div>' +
-        '</div>' +
-        '<div class="mb-1"><label style="font-size:12px;" class="fw-semibold">Patterns — check to add:</label></div>' +
+        '<div class="small text-muted mb-2">Product is auto-selected from the chosen pattern.</div>' +
+        '<div id="same_product_suggest_' + p.id + '" class="mb-2"></div>' +
+        '<div class="mb-1"><label style="font-size:12px;" class="fw-semibold">Patterns from this product</label></div>' +
         '<div id="pat_checks_' + p.id + '" class="mb-1"><small class="text-muted"><i class="bi bi-hourglass-split"></i> Loading patterns...</small></div>' +
         '<div id="pat_rows_' + p.id + '"></div>';
 
@@ -506,50 +505,98 @@ function addProductForm(p) {
         var patterns = results[0].patterns || [];
         var groups   = results[1].groups   || {};
         _productVarGroups[p.id] = groups;
+        _productSuggestionCache[p.id] = patterns;
 
-        // Render pattern checkboxes
         var checksHtml = patterns.map(function(pt) {
-            var label = esc(pt.tamil_name || pt.name) + (parseInt(pt.is_default) === 1 ? ' <span class="text-muted">(default)</span>' : '');
-            var checked = parseInt(pt.is_default) === 1 ? 'checked' : '';
+            var label = esc(pt.tamil_name || pt.name) + (pt.pattern_code ? ' <span class="text-muted">(' + esc(pt.pattern_code) + ')</span>' : '') + (parseInt(pt.is_default) === 1 ? ' <span class="text-muted">(default)</span>' : '');
             return '<div class="form-check form-check-inline me-3">' +
-                '<input class="form-check-input" type="checkbox" id="patcb_' + p.id + '_' + pt.id + '" ' + checked +
+                '<input class="form-check-input" type="checkbox" id="patcb_' + p.id + '_' + pt.id + '"' +
                 ' onchange="togglePatternRow(' + p.id + ', ' + JSON.stringify(pt).replace(/"/g,'&quot;') + ', this.checked)">' +
                 '<label class="form-check-label" style="font-size:13px;" for="patcb_' + p.id + '_' + pt.id + '">' + label + '</label>' +
                 '</div>';
         }).join('');
         document.getElementById('pat_checks_' + p.id).innerHTML = checksHtml || '<small class="text-muted">No patterns.</small>';
-
-        // Auto-add default pattern row
-        patterns.forEach(function(pt) {
-            if (parseInt(pt.is_default) === 1) {
-                togglePatternRow(p.id, pt, true);
-            }
-        });
+        ensurePatternLoaded(p.id, initialPattern);
     });
+}
+
+function ensurePatternLoaded(productId, initialPattern) {
+    if (!initialPattern) return;
+    var cb = document.getElementById('patcb_' + productId + '_' + initialPattern.id);
+    if (cb && !cb.checked) cb.checked = true;
+    togglePatternRow(productId, initialPattern, true);
+    updateAddCount();
+}
+
+function updateSameProductSuggestions(productId, selectedPatternId) {
+    var wrap = document.getElementById('same_product_suggest_' + productId);
+    if (!wrap) return;
+    var patterns = _productSuggestionCache[productId] || [];
+    var others = patterns.filter(function(pt) { return String(pt.id) !== String(selectedPatternId); });
+    if (!others.length) {
+        wrap.innerHTML = '';
+        return;
+    }
+    var html = '<div class="border rounded p-2 bg-light-subtle">';
+    html += '<div class="fw-semibold mb-1" style="font-size:12px;">Add other patterns from this product?</div>';
+    html += '<div class="d-flex flex-wrap gap-2">';
+    others.forEach(function(pt) {
+        var active = !!_selectedPatternRows[productId + '_' + pt.id];
+        html += '<button type="button" class="btn btn-sm ' + (active ? 'btn-primary' : 'btn-outline-primary') + '" onclick="toggleSuggestionPattern(' + productId + ', ' + JSON.stringify(pt).replace(/"/g,'&quot;') + ')">' + esc(pt.tamil_name || pt.name) + '</button>';
+    });
+    html += '</div></div>';
+    wrap.innerHTML = html;
+}
+
+function toggleSuggestionPattern(productId, pt) {
+    var key = productId + '_' + pt.id;
+    var checked = !_selectedPatternRows[key];
+    var cb = document.getElementById('patcb_' + productId + '_' + pt.id);
+    if (cb) cb.checked = checked;
+    togglePatternRow(productId, pt, checked);
+    updateAddCount();
+    calcAllWeights();
+}
+
+function removePatternRow(productId, patternId) {
+    var key = productId + '_' + patternId;
+    var row = document.getElementById('patrow_' + key);
+    if (row) row.remove();
+    delete _selectedPatternRows[key];
+    delete _newFormWeightMaps[key];
+
+    var cb = document.getElementById('patcb_' + productId + '_' + patternId);
+    if (cb) cb.checked = false;
+
+    var remaining = Object.keys(_selectedPatternRows).filter(function(k) { return k.indexOf(productId + '_') === 0; });
+    if (!remaining.length) {
+        delete _selectedProducts[productId];
+        delete _productSuggestionCache[productId];
+        var form = document.getElementById('pform_' + productId);
+        if (form) form.remove();
+    } else {
+        updateSameProductSuggestions(productId, remaining[remaining.length - 1].split('_')[1]);
+    }
 }
 
 function togglePatternRow(productId, pt, checked) {
     var rowsContainer = document.getElementById('pat_rows_' + productId);
+    if (!rowsContainer) return;
     var rowId = 'patrow_' + productId + '_' + pt.id;
     var key   = productId + '_' + pt.id;
 
     if (!checked) {
-        var el = document.getElementById(rowId);
-        if (el) el.remove();
-        // remove weight tracking for this key
-        delete _newFormWeightMaps[key];
+        removePatternRow(productId, pt.id);
         calcAllWeights();
         return;
     }
 
     if (document.getElementById(rowId)) return; // already exists
+    _selectedPatternRows[key] = { product_id: productId, pattern_id: pt.id };
 
-    var stampSel = document.getElementById('stamp_' + productId);
-    var stampId  = stampSel ? stampSel.value : '';
-
-    var patLabel = parseInt(pt.is_default) === 1
-        ? '<span class="text-muted fst-italic">Default</span>'
-        : '<span class="badge bg-primary-subtle text-primary border border-primary-subtle">' + esc(pt.name) + '</span>';
+    var patLabel = '<span class="badge bg-primary-subtle text-primary border border-primary-subtle">' + esc(pt.tamil_name || pt.name) + '</span>';
+    if (pt.pattern_code) patLabel += '<span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle">' + esc(pt.pattern_code) + '</span>';
+    if (parseInt(pt.is_default) === 1) patLabel += '<span class="text-muted fst-italic">Default</span>';
 
     var groups = _productVarGroups[productId] || {};
     var varsHtml = renderVariationGridHtml(groups, key);
@@ -564,17 +611,8 @@ function togglePatternRow(productId, pt, checked) {
         '</div>' +
         '<input type="hidden" name="products[' + key + '][product_id]" value="' + productId + '">' +
         '<input type="hidden" name="products[' + key + '][pattern_id]" value="' + pt.id + '">' +
-        '<input type="hidden" name="products[' + key + '][stamp_id]" id="stamp_hidden_' + key + '" value="' + esc(stampId) + '">' +
         varsHtml;
     rowsContainer.appendChild(row);
-
-    // Sync stamp hidden input when stamp dropdown changes
-    if (stampSel) {
-        stampSel.addEventListener('change', function() {
-            var h = document.getElementById('stamp_hidden_' + key);
-            if (h) h.value = this.value;
-        });
-    }
 
     // Fetch weight map for this pattern
     var data = {product_id: productId, order_id: _orderId, pattern_id: pt.id};
@@ -582,6 +620,8 @@ function togglePatternRow(productId, pt, checked) {
         _newFormWeightMaps[key] = d.weight_map || {};
         calcAllWeights();
     });
+    updateSameProductSuggestions(productId, pt.id);
+    updateAddCount();
 }
 
 function fetchWeightMap(productId, patternId) {
@@ -616,7 +656,7 @@ function renderVariationGrid(container, groups, productId) {
 }
 
 function updateAddCount() {
-    var n = Object.keys(_selectedProducts).length;
+    var n = Object.keys(_selectedPatternRows).length;
     document.getElementById('addCount').textContent = n;
     document.getElementById('addItemsForm').style.display = n > 0 ? 'block' : 'none';
 }
@@ -624,17 +664,19 @@ function updateAddCount() {
 function clearSelection() {
     _selectedProducts = {};
     _newFormWeightMaps = {};
+    _selectedPatternRows = {};
+    _productSuggestionCache = {};
     document.getElementById('selectedProductForms').innerHTML = '';
     document.getElementById('addItemsForm').style.display = 'none';
     document.getElementById('searchResults').innerHTML = '';
-    document.querySelectorAll('.product-cb').forEach(function(cb){ cb.checked = false; });
+    document.querySelectorAll('.pattern-cb').forEach(function(cb){ cb.checked = false; });
     updateAddCount();
     calcAllWeights();
 }
 
 // ---- COPY FROM ABOVE ----
 function copyFromAbove(btn) {
-    var card    = btn.closest('.card');
+    var card    = btn.closest('.order-item-card');
     var prevQty = JSON.parse(card.dataset.prevQty || '{}');
     if (!Object.keys(prevQty).length) { alert('No previous item quantities to copy.'); return; }
     var inputs = card.querySelectorAll('input.qty-input[name^="qty["]');
@@ -647,7 +689,23 @@ function copyFromAbove(btn) {
     calcAllWeights();
 }
 
-document.getElementById('productSearch').addEventListener('keydown', function(e){ if(e.key==='Enter'){e.preventDefault();doSearch();} });
+document.getElementById('patternSearch').addEventListener('keydown', function(e){ if(e.key==='Enter'){e.preventDefault();doSearch();} });
+document.getElementById('productTypeFilter').addEventListener('change', function(){ doSearch(); });
+
+document.addEventListener('turbo:load', function() {
+    var modalEl = document.getElementById('addPatternModal');
+    if (!modalEl || modalEl.dataset.bound === '1') return;
+    modalEl.dataset.bound = '1';
+
+    modalEl.addEventListener('shown.bs.modal', function() {
+        var input = document.getElementById('patternSearch');
+        if (input) input.focus();
+    });
+
+    modalEl.addEventListener('hidden.bs.modal', function() {
+        clearSelection();
+    });
+});
 
 // ========== EXISTING ITEM PATTERN CHANGE ==========
 function onExistingPatternChange(sel) {
@@ -683,12 +741,11 @@ function updateDirtyCount() {
     var el = document.getElementById('dirtyCount'); if (el) el.textContent = n;
     var btn = document.getElementById('saveAllBtn'); if (btn) btn.classList.toggle('d-none', n === 0);
 }
+function hasDirtyChanges() {
+    return document.querySelectorAll('.order-item-card[data-dirty="1"]').length > 0;
+}
 document.addEventListener('input', function(e) {
     if (e.target.classList.contains('qty-input')) markDirty(e.target.closest('.order-item-card'));
-});
-document.addEventListener('change', function(e) {
-    var card = e.target.closest('.order-item-card');
-    if (card && e.target.name === 'stamp_id') markDirty(card);
 });
 
 // ========== SAVE ALL ==========
@@ -727,10 +784,25 @@ function saveAllItems() {
 
 // ========== UNSAVED WARNING ==========
 window.addEventListener('beforeunload', function(e) {
-    var dirty = document.querySelectorAll('.order-item-card[data-dirty="1"]');
-    if (dirty.length > 0) {
+    if (hasDirtyChanges()) {
         e.preventDefault();
         e.returnValue = '';
+    }
+});
+document.addEventListener('click', function(e) {
+    var link = e.target.closest('a[href]');
+    if (!link) return;
+    if (link.target === '_blank') return;
+    if (link.href && link.href.startsWith('javascript:')) return;
+    if (!hasDirtyChanges()) return;
+    if (!confirm('You have unsaved changes. Do you want to leave without saving?')) {
+        e.preventDefault();
+    }
+});
+document.addEventListener('turbo:before-visit', function(e) {
+    if (!hasDirtyChanges()) return;
+    if (!confirm('You have unsaved changes. Do you want to leave without saving?')) {
+        e.preventDefault();
     }
 });
 </script>
@@ -743,7 +815,7 @@ window.addEventListener('beforeunload', function(e) {
   </div>
 </div>
 <script>
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('turbo:load', function() {
   document.addEventListener('click', function(e) {
     if (!e.target.classList.contains('order-thumb-preview')) return;
     document.getElementById('orderThumbModalImg').src = e.target.dataset.img;
