@@ -127,15 +127,23 @@ function buildUrl(array $params): string {
                             <ul class="dropdown-menu dropdown-menu-end">
                                 <li><span class="dropdown-header">Change status to:</span></li>
                                 <?php foreach ($nextStatuses as $ns): ?>
-                                <li><a class="dropdown-item" href="<?= base_url('orders/updateStatus/' . $o['id'] . '/' . $ns) ?>" data-turbo="false" onclick="return confirm('Change status to <?= ucfirst($ns) ?>?')">
-                                    <span class="badge bg-<?= $colors[$ns] ?? 'secondary' ?> me-1">&nbsp;</span> <?= ucfirst($ns) ?>
-                                </a></li>
+                                <li>
+                                    <form action="<?= base_url('orders/updateStatus/' . $o['id'] . '/' . $ns) ?>" method="post" data-turbo="false" onsubmit="return confirm('Change status to <?= ucfirst($ns) ?>?')">
+                                        <?= csrf_field() ?>
+                                        <button type="submit" class="dropdown-item">
+                                            <span class="badge bg-<?= $colors[$ns] ?? 'secondary' ?> me-1">&nbsp;</span> <?= ucfirst($ns) ?>
+                                        </button>
+                                    </form>
+                                </li>
                                 <?php endforeach; ?>
                             </ul>
                         </div>
                         <?php endif; ?>
                         <?php if ($o['status'] === 'draft'): ?>
-                        <a href="<?= base_url('orders/delete/' . $o['id']) ?>" class="btn btn-danger btn-sm" onclick="return confirm('Are you sure you want to DELETE order &quot;<?= esc($o['title']) ?>&quot;? This cannot be undone!')"><i class="bi bi-trash"></i></a>
+                        <form action="<?= base_url('orders/delete/' . $o['id']) ?>" method="post" class="d-inline" data-turbo="false" onsubmit="return confirm('Are you sure you want to DELETE order &quot;<?= esc($o['title']) ?>&quot;? This cannot be undone!')">
+                            <?= csrf_field() ?>
+                            <button type="submit" class="btn btn-danger btn-sm"><i class="bi bi-trash"></i></button>
+                        </form>
                         <?php endif; ?>
                     </td>
                 </tr>

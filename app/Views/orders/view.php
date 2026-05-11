@@ -41,9 +41,14 @@ $imgBase = upload_url('products/');
                     <button type="button" class="btn btn-outline-primary btn-sm dropdown-toggle" data-bs-toggle="dropdown"><i class="bi bi-arrow-repeat"></i> Change Status</button>
                     <ul class="dropdown-menu">
                         <?php foreach ($nextStatuses as $ns): ?>
-                        <li><a class="dropdown-item" href="<?= base_url('orders/updateStatus/' . $order['id'] . '/' . $ns) ?>" data-turbo="false" onclick="return confirm('Change status to <?= ucfirst($ns) ?>?')">
-                            <span class="badge bg-<?= $colors[$ns] ?? 'secondary' ?> me-1">&nbsp;</span> <?= ucfirst($ns) ?>
-                        </a></li>
+                        <li>
+                            <form action="<?= base_url('orders/updateStatus/' . $order['id'] . '/' . $ns) ?>" method="post" data-turbo="false" onsubmit="return confirm('Change status to <?= ucfirst($ns) ?>?')">
+                                <?= csrf_field() ?>
+                                <button type="submit" class="dropdown-item">
+                                    <span class="badge bg-<?= $colors[$ns] ?? 'secondary' ?> me-1">&nbsp;</span> <?= ucfirst($ns) ?>
+                                </button>
+                            </form>
+                        </li>
                         <?php endforeach; ?>
                     </ul>
                 </div>
@@ -142,7 +147,10 @@ foreach ($items as $_itm) {
             <?php endif; ?>
         </div>
         <?php if ($canEdit): ?>
-        <a href="<?= base_url('orders/removeItem/' . $item['id']) ?>" class="btn btn-danger btn-sm" onclick="return confirm('Remove this item?')"><i class="bi bi-trash"></i></a>
+        <form action="<?= base_url('orders/removeItem/' . $item['id']) ?>" method="post" class="d-inline" data-turbo="false" onsubmit="return confirm('Remove this item?')">
+            <?= csrf_field() ?>
+            <button type="submit" class="btn btn-danger btn-sm"><i class="bi bi-trash"></i></button>
+        </form>
         <?php endif; ?>
     </div>
     <div class="card-body py-2 px-3">
