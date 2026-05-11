@@ -700,7 +700,7 @@ class Orders extends BaseController
     {
         $order = $this->_getOrder($id);
         if (!$order) return redirect()->to('orders')->with('error', 'Not found');
-        if ($order['status'] !== 'draft') return redirect()->to('orders/view/' . $id)->with('info', 'Only the order header (title/client/notes) can be edited for Draft orders. To change products or quantities, use the panels below.');
+        if ($order['status'] === 'closed') return redirect()->to('orders/view/' . $id)->with('info', 'Closed orders cannot be edited.');
 
         return view('orders/form', [
             'title'   => 'Edit Order',
@@ -713,7 +713,7 @@ class Orders extends BaseController
     public function update($id)
     {
         $order = $this->_getOrder($id);
-        if (!$order || $order['status'] !== 'draft') return redirect()->to('orders')->with('error', 'Cannot edit');
+        if (!$order || $order['status'] === 'closed') return redirect()->to('orders')->with('error', 'Cannot edit');
         $d = $this->request->getPost();
         $this->db->table('orders')->where('id', $id)->update([
             'title'     => trim($d['title'] ?? ''),

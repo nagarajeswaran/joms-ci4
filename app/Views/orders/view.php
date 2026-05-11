@@ -773,6 +773,7 @@ function saveAllItems() {
         btn.disabled = false;
         btn.innerHTML = '<i class="bi bi-floppy"></i> Save All Changes (<span id="dirtyCount">0</span>)';
         updateDirtyCount();
+        _isSaving = false;
         var t = document.createElement('div');
         t.className = 'alert alert-success alert-dismissible position-fixed top-0 end-0 m-3';
         t.style.zIndex = 9999;
@@ -783,13 +784,19 @@ function saveAllItems() {
 }
 
 // ========== UNSAVED WARNING ==========
+var _isSaving = false;
+document.querySelectorAll('form').forEach(function(f) {
+    f.addEventListener('submit', function() { _isSaving = true; });
+});
 window.addEventListener('beforeunload', function(e) {
+    if (_isSaving) return;
     if (hasDirtyChanges()) {
         e.preventDefault();
         e.returnValue = '';
     }
 });
 document.addEventListener('click', function(e) {
+    if (_isSaving) return;
     var link = e.target.closest('a[href]');
     if (!link) return;
     if (link.target === '_blank') return;
@@ -800,6 +807,7 @@ document.addEventListener('click', function(e) {
     }
 });
 document.addEventListener('turbo:before-visit', function(e) {
+    if (_isSaving) return;
     if (!hasDirtyChanges()) return;
     if (!confirm('You have unsaved changes. Do you want to leave without saving?')) {
         e.preventDefault();

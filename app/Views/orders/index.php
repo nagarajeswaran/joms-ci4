@@ -103,7 +103,7 @@ function buildUrl(array $params): string {
                     <td><?= date('d M Y H:i', strtotime($o['created_at'])) ?></td>
                     <td>
                         <a href="<?= base_url('orders/view/' . $o['id']) ?>" class="btn btn-info btn-sm"><i class="bi bi-eye"></i></a>
-                        <?php if ($o['status'] === 'draft'): ?>
+                        <?php if ($o['status'] !== 'closed'): ?>
                         <a href="<?= base_url('orders/edit/' . $o['id']) ?>" class="btn btn-warning btn-sm"><i class="bi bi-pencil"></i></a>
                         <?php endif; ?>
                         <?php if ($o['status'] !== 'closed'): ?>
