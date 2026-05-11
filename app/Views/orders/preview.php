@@ -23,15 +23,16 @@
     <div class="card-body p-0">
         <table class="table table-sm mb-0" style="font-size:13px;">
             <thead>
-                <tr><th>#</th><th>Product</th><th>Pattern</th><th>Stamp</th><th>Variations & Quantities</th><th>Total Pcs</th></tr>
+                <tr><th>#</th><th>Pattern</th><th>Body</th><th>Pidi</th><th>Stamp</th><th>Variations & Quantities</th><th>Total Pcs</th></tr>
             </thead>
             <tbody>
                 <?php foreach ($items as $idx => $item): ?>
                 <?php $total = array_sum($item['qty_map']); ?>
                 <tr class="<?= !$item['has_qty'] ? 'table-warning' : '' ?>">
                     <td><?= $idx + 1 ?></td>
-                    <td><strong><?= esc($item['product_name']) ?></strong></td>
-                    <td><?= esc($item['pattern_name'] ?? '—') ?></td>
+                    <td><strong><?= esc(!empty($item['pattern_tamil_name']) ? $item['pattern_tamil_name'] : (!empty($item['pattern_name']) ? $item['pattern_name'] : $item['product_name'])) ?></strong></td>
+                    <td><?= esc($item['body_name'] ?? '—') ?></td>
+                    <td><?= esc($item['pidi'] ?? '—') ?></td>
                     <td><?= esc($item['stamp_name'] ?? '—') ?></td>
                     <td>
                         <?php if (!$item['has_qty']): ?>
@@ -48,7 +49,7 @@
                 </tr>
                 <?php endforeach; ?>
                 <?php if (empty($items)): ?>
-                <tr><td colspan="6" class="text-center text-muted py-3">No items in order</td></tr>
+                <tr><td colspan="7" class="text-center text-muted py-3">No items in order</td></tr>
                 <?php endif; ?>
             </tbody>
         </table>

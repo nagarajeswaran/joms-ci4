@@ -998,13 +998,14 @@ class Orders extends BaseController
         if (!$order) return redirect()->to('orders')->with('error', 'Not found');
 
         $rawItems = $this->db->query('
-            SELECT oi.*, p.name as product_name, pp.name as pattern_name, s.name as stamp_name,
-                   pt.variations as pt_variations
+            SELECT oi.*, p.name as product_name, p.pidi, pp.name as pattern_name, pp.tamil_name as pattern_tamil_name,
+                   s.name as stamp_name, pt.variations as pt_variations, b.name as body_name
             FROM order_items oi
             JOIN product p ON p.id = oi.product_id
             LEFT JOIN product_type pt ON pt.id = p.product_type_id
             LEFT JOIN product_pattern pp ON pp.id = oi.pattern_id
             LEFT JOIN stamp s ON s.id = oi.stamp_id
+            LEFT JOIN body b ON b.id = p.body_id
             WHERE oi.order_id = ?
             ORDER BY oi.sort_order, oi.id
         ', [$orderId])->getResultArray();
