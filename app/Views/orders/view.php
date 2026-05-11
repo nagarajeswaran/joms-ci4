@@ -690,8 +690,10 @@ function copyFromAbove(btn) {
     calcAllWeights();
 }
 
-document.getElementById('patternSearch').addEventListener('keydown', function(e){ if(e.key==='Enter'){e.preventDefault();doSearch();} });
-document.getElementById('productTypeFilter').addEventListener('change', function(){ doSearch(); });
+var _patternSearchEl = document.getElementById('patternSearch');
+var _typeFilterEl = document.getElementById('productTypeFilter');
+if (_patternSearchEl) _patternSearchEl.addEventListener('keydown', function(e){ if(e.key==='Enter'){e.preventDefault();doSearch();} });
+if (_typeFilterEl) _typeFilterEl.addEventListener('change', function(){ doSearch(); });
 
 document.addEventListener('turbo:load', function() {
     var modalEl = document.getElementById('addPatternModal');
