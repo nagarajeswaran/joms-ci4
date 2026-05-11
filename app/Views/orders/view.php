@@ -420,6 +420,7 @@ function calcAllWeights() {
 }
 
 // Run on page load with existing values
+calcAllWeights();
 window.addEventListener('turbo:load', function() { calcAllWeights(); });
 document.addEventListener('DOMContentLoaded', function() { calcAllWeights(); });
 
