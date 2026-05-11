@@ -839,4 +839,8 @@ document.addEventListener('turbo:load', function() {
   });
 });
 </script>
+<script>
+// Force recalculation - separate script tag ensures Turbo always evaluates this
+if (typeof calcAllWeights === 'function') calcAllWeights();
+</script>
 <?php $this->endSection() ?>
