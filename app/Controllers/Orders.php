@@ -162,9 +162,14 @@ class Orders extends BaseController
                 $weightPerKanni = (float)$setup['weight_per_kanni'];
             }
         }
-        if ($kanniPerInch <= 0 && $mainId) {
-            $mp = $this->db->query('SELECT pcs FROM part WHERE id = ?', [$mainId])->getRowArray();
-            if ($mp && isset($mp['pcs'])) $kanniPerInch = (float)$mp['pcs'];
+        if ($mainId) {
+            $mp = $this->db->query('SELECT pcs, weight FROM part WHERE id = ?', [$mainId])->getRowArray();
+            if ($kanniPerInch <= 0 && $mp && isset($mp['pcs'])) {
+                $kanniPerInch = (float)$mp['pcs'];
+            }
+            if ($weightPerKanni <= 0 && $mp && isset($mp['weight'])) {
+                $weightPerKanni = (float)$mp['weight'];
+            }
         }
         if ($kanniPerInch <= 0) $kanniPerInch = 12.0;
 
