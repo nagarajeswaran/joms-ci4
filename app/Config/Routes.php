@@ -177,6 +177,7 @@ $routes->get('orders/partRequirementsPdf/(:num)',  'Orders::partRequirementsPdf/
 $routes->post('orders/saveTouchAnalysis/(:num)',   'Orders::saveTouchAnalysis/$1');
 $routes->post('orders/searchProducts', 'Orders::searchProducts');
 $routes->post('orders/searchPatterns', 'Orders::searchPatterns');
+$routes->post('orders/createStamp', 'Orders::createStamp');
 $routes->get('orders/combined-main-part-setup',    'Orders::combinedMainPartSetup');
 $routes->post('orders/combined-part-requirements', 'Orders::combinedPartRequirements');
 $routes->post('orders/getProductPatterns', 'Orders::getProductPatterns');

@@ -2706,6 +2706,25 @@ class Orders extends BaseController
         return $this->response->setJSON(['products' => $this->db->query($sql, $params)->getResultArray()]);
     }
 
+    public function createStamp()
+    {
+        $name = trim((string)($this->request->getPost('name') ?? ''));
+        if ($name === '') {
+            return $this->response->setJSON(['error' => 'Name is required']);
+        }
+
+        // Check if stamp already exists
+        $existing = $this->db->query('SELECT id FROM stamp WHERE name = ?', [$name])->getRowArray();
+        if ($existing) {
+            return $this->response->setJSON(['id' => $existing['id'], 'name' => $name]);
+        }
+
+        $this->db->table('stamp')->insert([
+            'name' => $name,
+        ]);
+        return $this->response->setJSON(['id' => $this->db->insertID(), 'name' => $name]);
+    }
+
     public function searchPatterns()
     {
         $q = trim((string)($this->request->getPost('q') ?? ''));
