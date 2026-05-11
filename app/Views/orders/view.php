@@ -435,13 +435,13 @@ function doSearch() {
             return;
         }
         var html = '<div class="border rounded mb-2"><table class="table table-sm table-hover mb-0" style="font-size:12px;">';
-        html += '<thead><tr><th style="width:30px;"></th><th>Pattern</th><th>Code</th><th>Product</th><th>SKU</th><th>Type</th></tr></thead><tbody>';
+        html += '<thead><tr><th style="width:30px;"></th><th>Pattern</th><th>Code</th><th>Product</th><th>SKU</th><th>Pidi</th><th>Type</th><th>Body</th></tr></thead><tbody>';
         d.patterns.forEach(function(p) {
             var key = p.product_id + '_' + p.id;
             var checked = _selectedPatternRows[key] ? 'checked' : '';
             var img = p.image ? '<img src="' + _baseUrl + 'uploads/products/' + esc(p.image) + '" style="width:24px;height:24px;object-fit:cover;border-radius:3px;" class="me-1">' : '<span style="width:24px;height:24px;background:#eee;display:inline-flex;align-items:center;justify-content:center;border-radius:3px;" class="me-1"><i class="bi bi-image" style="font-size:10px;"></i></span>';
             html += '<tr><td><input type="checkbox" class="pattern-cb" value="' + key + '" ' + checked + ' onchange="togglePatternSelection(' + JSON.stringify(p).replace(/"/g,'&quot;') + ', this.checked)"></td>';
-            html += '<td>' + img + esc(p.tamil_name || p.name) + (parseInt(p.is_default) === 1 ? ' <span class="text-muted">(default)</span>' : '') + '</td><td>' + esc(p.pattern_code || '') + '</td><td>' + esc(p.product_name || '') + '</td><td>' + esc(p.sku||'') + '</td><td>' + esc(p.type_name||'') + '</td></tr>';
+            html += '<td>' + img + esc(p.tamil_name || p.name) + (parseInt(p.is_default) === 1 ? ' <span class="text-muted">(default)</span>' : '') + '</td><td>' + esc(p.pattern_code || '') + '</td><td>' + esc(p.product_name || '') + '</td><td>' + esc(p.sku||'') + '</td><td>' + esc(p.pidi||'') + '</td><td>' + esc(p.type_name||'') + '</td><td>' + esc(p.body_name||'') + '</td></tr>';
         });
         html += '</tbody></table></div>';
         document.getElementById('searchResults').innerHTML = html;

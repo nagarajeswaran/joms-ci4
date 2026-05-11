@@ -2723,6 +2723,7 @@ class Orders extends BaseController
                 pp.is_default,
                 p.name AS product_name,
                 p.sku,
+                p.pidi,
                 p.image,
                 pt.name AS type_name,
                 b.name AS body_name
