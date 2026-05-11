@@ -730,11 +730,12 @@ class Products extends BaseController
         if ($isDefault) {
             $patternCode = $productSku . '-P00';
         } else {
-            $existingCount = $this->db->query(
-                'SELECT COUNT(*) as cnt FROM product_pattern WHERE product_id = ? AND is_default = 0',
+            // Find the highest existing pattern number to avoid duplicates
+            $maxCode = $this->db->query(
+                "SELECT MAX(CAST(SUBSTRING(pattern_code, -2) AS UNSIGNED)) as max_num FROM product_pattern WHERE product_id = ? AND is_default = 0 AND pattern_code REGEXP '-P[0-9]+$'",
                 [$productId]
-            )->getRowArray()['cnt'];
-            $patternCode = $productSku . '-P' . str_pad($existingCount + 1, 2, '0', STR_PAD_LEFT);
+            )->getRowArray()['max_num'] ?? 0;
+            $patternCode = $productSku . '-P' . str_pad($maxCode + 1, 2, '0', STR_PAD_LEFT);
         }
 
         $patternData = [
