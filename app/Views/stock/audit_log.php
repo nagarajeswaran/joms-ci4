@@ -179,7 +179,7 @@ $typeLabels = [
 <?= $this->section('scripts') ?>
 <script>
 var _enModal;
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('turbo:load', function() {
     _enModal = new bootstrap.Modal(document.getElementById('editNoteModal'));
 });
 function openEditNote(id, note) {

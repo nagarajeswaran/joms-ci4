@@ -2,7 +2,7 @@
 <?php $this->section('content') ?>
 <div class="card">
     <div class="card-body">
-        <form action="<?= base_url('products/' . (isset($item) ? 'update/' . $item['id'] : 'store')) ?>" method="post" enctype="multipart/form-data">
+        <form action="<?= base_url('products/' . (isset($item) ? 'update/' . $item['id'] : 'store')) ?>" method="post" enctype="multipart/form-data" data-turbo="false">
             <?= csrf_field() ?>
 
             <h6 class="border-bottom pb-2 mb-3">Product Details</h6>

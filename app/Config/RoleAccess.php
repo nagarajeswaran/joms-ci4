@@ -17,6 +17,39 @@ class RoleAccess
         'mfg-masters'        => 'Mfg Masters',
     ];
 
+    public const ZONE_ALWAYS_VISIBLE = ['Dashboard', 'Administration'];
+
+    public const ADMIN_ZONES = [
+        'manufacturing' => [
+            'label'   => 'Manufacturing',
+            'icon'    => 'bi-gear-wide-connected',
+            'desc'    => 'Orders, Karigar, Melt Jobs, Assembly, Raw Materials',
+            'modules' => ['Manufacturing', 'Raw Material Stock', 'Mfg Masters'],
+            'home'    => 'orders',
+        ],
+        'product-stock' => [
+            'label'   => 'Product & Stock',
+            'icon'    => 'bi-boxes',
+            'desc'    => 'Products, Inventory, Labels, Transfers',
+            'modules' => ['Products', 'Product Inventory'],
+            'home'    => 'products',
+        ],
+        'masters' => [
+            'label'   => 'Masters',
+            'icon'    => 'bi-database-gear',
+            'desc'    => 'Product Types, Bodies, Variations, Parts, Clients',
+            'modules' => ['Masters'],
+            'home'    => 'product-types',
+        ],
+        'all' => [
+            'label'   => 'All Modules',
+            'icon'    => 'bi-grid-3x3-gap',
+            'desc'    => 'Show all navigation modules',
+            'modules' => null,
+            'home'    => 'product-types',
+        ],
+    ];
+
     public const ROLE_ALIASES = [
         'admin'          => 'admin',
         'administrator'  => 'admin',
@@ -262,5 +295,22 @@ class RoleAccess
         }
 
         return array_values(array_unique($patterns));
+    }
+
+    /**
+     * Get the list of sidebar module titles visible for a given zone.
+     * Returns null if all modules should be shown.
+     */
+    public static function getZoneModuleTitles(?string $zone): ?array
+    {
+        if ($zone === null || $zone === 'all') {
+            return null;
+        }
+
+        if (!isset(self::ADMIN_ZONES[$zone])) {
+            return null;
+        }
+
+        return array_merge(self::ZONE_ALWAYS_VISIBLE, self::ADMIN_ZONES[$zone]['modules']);
     }
 }

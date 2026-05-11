@@ -12,7 +12,7 @@
 
 <div class="card" style="max-width:620px">
 <div class="card-body">
-<form method="post" action="<?= isset($isEdit) ? base_url('touch-shops/update/'.$entry['id']) : base_url('touch-shops/store') ?>" enctype="multipart/form-data">
+<form method="post" action="<?= isset($isEdit) ? base_url('touch-shops/update/'.$entry['id']) : base_url('touch-shops/store') ?>" enctype="multipart/form-data" data-turbo="false">
 <?= csrf_field() ?>
 
 <div class="row g-3">

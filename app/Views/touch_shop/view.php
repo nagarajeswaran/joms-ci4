@@ -157,7 +157,7 @@
 <?= $this->section('scripts') ?>
 <script>
 var rbModal;
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('turbo:load', function() {
     rbModal = new bootstrap.Modal(document.getElementById('receiveBackModal'));
 });
 function openReceiveModal(issueId, issued, pending) {

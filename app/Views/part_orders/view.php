@@ -7,6 +7,7 @@
     </div>
     <div class="d-flex align-items-center gap-2">
         <span class="badge <?= $po['status']==='posted'?'bg-success':'bg-warning text-dark' ?> fs-6"><?= ucfirst($po['status']) ?></span>
+        <a href="<?= base_url('part-orders/'.$po['id'].'/manf-plan-pdf') ?>" target="_blank" class="btn btn-sm btn-outline-dark"><i class="bi bi-printer"></i> Print Plan</a>
         <button class="btn btn-sm btn-outline-primary" type="button" data-bs-toggle="collapse" data-bs-target="#allocPanel" id="allocToggleBtn">Manufacturing Plan ▼</button>
         <a href="<?= base_url('part-orders') ?>" class="btn btn-secondary btn-sm"><i class="bi bi-arrow-left"></i> Back</a>
     </div>
@@ -17,10 +18,24 @@
 <div class="card-header d-flex justify-content-between">
     <strong>Issued (Gatti / Parts)</strong>
     <?php if ($po['status']==='draft'): ?>
-    <button class="btn btn-outline-secondary btn-sm" onclick="toggleForm('issueForm')">+ Add Issue</button>
+    <div class="d-flex gap-2">
+        <button class="btn btn-outline-info btn-sm" onclick="toggleForm('issueScanBar')"><i class="bi bi-upc-scan"></i> Scan</button>
+        <button class="btn btn-outline-secondary btn-sm" onclick="toggleForm('issueForm')">+ Add Issue</button>
+    </div>
     <?php endif; ?>
 </div>
 <?php if ($po['status']==='draft'): ?>
+<!-- Barcode scan bar for Issue -->
+<div id="issueScanBar" style="display:none" class="card-body border-bottom bg-white">
+<div class="row g-2 align-items-center">
+    <div class="col-auto"><i class="bi bi-upc-scan fs-5 text-info"></i></div>
+    <div class="col">
+        <input type="text" id="issueScanInput" class="form-control form-control-sm" placeholder="Scan or type batch barcode..." autocomplete="off" autofocus>
+    </div>
+    <div class="col-auto"><button class="btn btn-info btn-sm" onclick="doIssueScan()">Lookup</button></div>
+    <div class="col-auto" id="issueScanMsg"></div>
+</div>
+</div>
 <div id="issueForm" style="display:none" class="card-body border-bottom bg-light">
 <form method="post" action="<?= base_url('part-orders/add-issue/'.$po['id']) ?>">
 <?= csrf_field() ?>
@@ -163,7 +178,6 @@
                    class="form-control form-control-sm" style="width:75px">
             <button type="submit" class="btn btn-sm btn-outline-secondary py-0">✓</button>
         </form>
-        <a href="<?= base_url('part-orders/'.$po['id'].'/manf-plan-pdf') ?>" target="_blank" class="btn btn-sm btn-outline-dark">⬇ Print Plan</a>
     </div>
 </div>
 <div class="card-body p-0">
@@ -256,12 +270,24 @@
     <strong>Received (Parts + Byproducts)</strong>
     <?php if ($po['status']==='draft'): ?>
     <div class="d-flex gap-2">
+        <button class="btn btn-outline-info btn-sm" onclick="toggleForm('recvScanBar')"><i class="bi bi-upc-scan"></i> Scan</button>
         <button class="btn btn-outline-primary btn-sm" onclick="toggleForm('pendingImportForm')">Pick Pending Receive</button>
         <button class="btn btn-outline-secondary btn-sm" onclick="toggleForm('recvForm')">+ Add Receive</button>
     </div>
     <?php endif; ?>
 </div>
 <?php if ($po['status']==='draft'): ?>
+<!-- Barcode scan bar for Receive -->
+<div id="recvScanBar" style="display:none" class="card-body border-bottom bg-white">
+<div class="row g-2 align-items-center">
+    <div class="col-auto"><i class="bi bi-upc-scan fs-5 text-info"></i></div>
+    <div class="col">
+        <input type="text" id="recvScanInput" class="form-control form-control-sm" placeholder="Scan batch barcode to fill receive..." autocomplete="off">
+    </div>
+    <div class="col-auto"><button class="btn btn-info btn-sm" onclick="doRecvScan()">Lookup</button></div>
+    <div class="col-auto" id="recvScanMsg"></div>
+</div>
+</div>
 <div id="pendingImportForm" style="display:none" class="card-body border-bottom bg-white">
 <div class="d-flex justify-content-between align-items-center mb-2">
     <strong>Pick from Pending Receive Entry</strong>
@@ -688,9 +714,114 @@ function cancelAllocEdit() {
     document.getElementById('manualDiv').style.display = '';
 }
 // Init: hide manual div if a part is pre-selected
-document.addEventListener('DOMContentLoaded', function(){
+document.addEventListener('turbo:load', function(){
     var sel = document.getElementById('allocPartSel');
     if (sel) onPartChange(sel);
+});
+
+// ---------- Barcode Scan for Issue & Receive ----------
+var SCAN_BASE = '<?= base_url() ?>';
+
+function doIssueScan() {
+    var input = document.getElementById('issueScanInput');
+    var q = input.value.trim();
+    if (!q) return;
+    var msgEl = document.getElementById('issueScanMsg');
+    msgEl.innerHTML = '<span class="text-muted small">Looking up...</span>';
+
+    fetch(SCAN_BASE + 'part-orders/lookup-batch?q=' + encodeURIComponent(q))
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+        if (d.error) {
+            msgEl.innerHTML = '<span class="text-danger small">' + d.error + '</span>';
+            return;
+        }
+        // Show the issue form
+        var issueForm = document.getElementById('issueForm');
+        issueForm.style.display = '';
+
+        if (d.type === 'gatti') {
+            // Switch to gatti type
+            document.getElementById('typeGatti').checked = true;
+            switchIssueType('gatti');
+            // Select the gatti in dropdown
+            var sel = document.getElementById('gattiSel');
+            for (var i = 0; i < sel.options.length; i++) {
+                if (sel.options[i].value == d.id) { sel.selectedIndex = i; break; }
+            }
+            fillGattiTouch(sel);
+            msgEl.innerHTML = '<span class="text-success small"><i class="bi bi-check-circle"></i> Gatti: ' + (d.batch_number || d.job_number) + ' (' + d.available_g + 'g avail, ' + d.touch_pct + '%)</span>';
+        } else if (d.type === 'part') {
+            // Switch to part type
+            document.getElementById('typePart').checked = true;
+            switchIssueType('part');
+            // Select the part batch in dropdown
+            var sel = document.getElementById('partBatchSel');
+            for (var i = 0; i < sel.options.length; i++) {
+                if (sel.options[i].value == d.id) { sel.selectedIndex = i; break; }
+            }
+            msgEl.innerHTML = '<span class="text-success small"><i class="bi bi-check-circle"></i> Part: ' + d.part_name + ' (' + d.available_g + 'g avail, ' + d.touch_pct + '%)</span>';
+        }
+        // Focus weight input
+        document.getElementById('issueWeight').focus();
+        input.value = '';
+    })
+    .catch(function() { msgEl.innerHTML = '<span class="text-danger small">Network error</span>'; });
+}
+
+function doRecvScan() {
+    var input = document.getElementById('recvScanInput');
+    var q = input.value.trim();
+    if (!q) return;
+    var msgEl = document.getElementById('recvScanMsg');
+    msgEl.innerHTML = '<span class="text-muted small">Looking up...</span>';
+
+    fetch(SCAN_BASE + 'part-orders/lookup-batch?q=' + encodeURIComponent(q))
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+        if (d.error) {
+            msgEl.innerHTML = '<span class="text-danger small">' + d.error + '</span>';
+            return;
+        }
+        // Show receive form
+        var recvForm = document.getElementById('recvForm');
+        recvForm.style.display = '';
+
+        if (d.type === 'part') {
+            // Set receive type to part
+            var typeSel = recvForm.querySelector('select[name=receive_type]');
+            typeSel.value = 'part';
+            toggleRecvType(typeSel);
+            // Select part
+            var partSel = recvForm.querySelector('select[name=part_id]');
+            for (var i = 0; i < partSel.options.length; i++) {
+                if (partSel.options[i].value == d.part_id) { partSel.selectedIndex = i; break; }
+            }
+            // Fill batch number
+            var batchInput = recvForm.querySelector('input[name=batch_number]');
+            if (batchInput) batchInput.value = d.batch_number || '';
+            // Fill touch%
+            var touchInput = recvForm.querySelector('input[name=touch_pct]');
+            if (touchInput) touchInput.value = d.touch_pct;
+            msgEl.innerHTML = '<span class="text-success small"><i class="bi bi-check-circle"></i> Part: ' + d.part_name + ' | Batch: ' + d.batch_number + ' | Touch: ' + d.touch_pct + '%</span>';
+        } else if (d.type === 'gatti') {
+            msgEl.innerHTML = '<span class="text-warning small"><i class="bi bi-exclamation-triangle"></i> Scanned batch is Gatti stock, not a part. Use Issue scan instead.</span>';
+            input.value = '';
+            return;
+        }
+        // Focus weight input
+        document.getElementById('recvWeight').focus();
+        input.value = '';
+    })
+    .catch(function() { msgEl.innerHTML = '<span class="text-danger small">Network error</span>'; });
+}
+
+// Enter key triggers scan on both inputs
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') {
+        if (document.activeElement && document.activeElement.id === 'issueScanInput') { e.preventDefault(); doIssueScan(); }
+        if (document.activeElement && document.activeElement.id === 'recvScanInput')  { e.preventDefault(); doRecvScan(); }
+    }
 });
 </script>
 <?= $this->endSection() ?>

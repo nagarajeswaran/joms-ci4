@@ -68,7 +68,7 @@
                 <!-- Active filter badges -->
                 <div id="bulkBadges" class="mb-3 d-flex gap-1 flex-wrap"></div>
 
-                <a id="downloadLink" href="<?= base_url('products/bulkExportCsv') ?>" class="btn btn-success mb-3">
+                <a id="downloadLink" href="<?= base_url('products/bulkExportCsv') ?>" class="btn btn-success mb-3" data-turbo="false">
                     <i class="bi bi-download"></i> <span id="downloadLabel">Download CSV (all products)</span>
                 </a>
 

@@ -155,7 +155,7 @@
                 <!-- Edit Pattern Modal -->
                 <div class="modal fade" id="editPatternModal_<?= $pat['id'] ?>" tabindex="-1">
                     <div class="modal-dialog"><div class="modal-content">
-                        <form action="<?= base_url('products/updatePattern/' . $pat['id']) ?>" method="post" enctype="multipart/form-data">
+                        <form action="<?= base_url('products/updatePattern/' . $pat['id']) ?>" method="post" enctype="multipart/form-data" data-turbo="false">
                             <?= csrf_field() ?>
                             <div class="modal-header"><h5 class="modal-title">Edit Pattern</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
                             <div class="modal-body">
@@ -280,7 +280,7 @@
 
 <div class="modal fade" id="addPatternModal" tabindex="-1">
     <div class="modal-dialog"><div class="modal-content">
-        <form action="<?= base_url('products/addPattern/' . $product['id']) ?>" method="post" enctype="multipart/form-data">
+        <form action="<?= base_url('products/addPattern/' . $product['id']) ?>" method="post" enctype="multipart/form-data" data-turbo="false">
             <?= csrf_field() ?>
             <div class="modal-header"><h5 class="modal-title">Add Pattern</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
             <div class="modal-body">
@@ -414,7 +414,7 @@ document.addEventListener('change', function(e) {
         row.querySelector('.replace-col').style.display = (e.target.value === 'replace') ? '' : 'none';
     }
 });
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('turbo:load', function() {
     document.querySelectorAll('.pattern-thumb-preview').forEach(function(img) {
         img.addEventListener('click', function() {
             document.getElementById('patThumbModalImg').src = this.dataset.img;

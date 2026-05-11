@@ -588,7 +588,7 @@ echo json_encode($_kachaMap);
         <h6 class="modal-title"><i class="bi bi-flask"></i> Issue to Touch Ledger</h6>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
     </div>
-    <form method="post" id="tsFormAction" action="" enctype="multipart/form-data">
+    <form method="post" id="tsFormAction" action="" enctype="multipart/form-data" data-turbo="false">
     <?= csrf_field() ?>
     <input type="hidden" id="tsRecvId" name="recv_id">
     <div class="modal-body">
@@ -767,7 +767,7 @@ function calcSilverSuggestion() {
 }
 
 /* ===================== INIT ===================== */
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('turbo:load', function() {
     kachaModal = new bootstrap.Modal(document.getElementById('kachaModal'));
 
     document.getElementById('kachaCheckAll').addEventListener('change', function() {
@@ -1190,7 +1190,7 @@ function addKachasViaPost() {
 /* ===================== INLINE TOUCH% EDIT ===================== */
 var UPDATE_INPUT_BASE = '<?= base_url('melt-jobs/update-input/') ?>';
 
-document.addEventListener('DOMContentLoaded', function () {
+document.addEventListener('turbo:load', function () {
     document.querySelectorAll('.input-touch-edit').forEach(function (span) {
         span.style.borderBottom = '1px dashed #0d6efd';
         span.style.cursor = 'pointer';
@@ -1296,7 +1296,7 @@ function toggleByprod(sel) {
 }
 
 /* ===================== RECEIVE FORM — PREVENT ENTER SUBMIT ===================== */
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('turbo:load', function() {
     var recvForm = document.getElementById('addRecvForm');
     if (recvForm) {
         recvForm.querySelectorAll('input').forEach(function(inp) {
@@ -1310,7 +1310,7 @@ document.addEventListener('DOMContentLoaded', function() {
 /* ===================== RECEIVE ROWS — INLINE EDIT ===================== */
 var UPDATE_RECV_BASE = '<?= base_url('melt-jobs/update-receive/') ?>';
 
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('turbo:load', function() {
     document.querySelectorAll('.recv-edit-val').forEach(function(span) {
         span.addEventListener('click', function() { startRecvEdit(span); });
     });
@@ -1439,7 +1439,7 @@ function recalcRecvFooter() {
 
 /* ===================== ISSUE TO TOUCH LEDGER MODAL ===================== */
 var tsMod;
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('turbo:load', function() {
     var el = document.getElementById('issueTSModal');
     if (el) tsMod = new bootstrap.Modal(el);
 });
@@ -1483,7 +1483,7 @@ function openIssueTSModal(recvId, weight, batchNumber) {
     setTimeout(function() { document.getElementById('tsWeight').focus(); }, 400);
 }
 // Save touch shop name on modal form submit
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('turbo:load', function() {
     var form = document.getElementById('tsFormAction');
     if (form) form.addEventListener('submit', function() {
         var sel = document.getElementById('tsTouchShop');

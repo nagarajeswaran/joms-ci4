@@ -16,7 +16,7 @@
       <div class="card shadow-sm">
         <div class="card-header fw-semibold">Upload File</div>
         <div class="card-body">
-          <form action="<?= site_url('part-stock/import/preview') ?>" method="post" enctype="multipart/form-data">
+          <form action="<?= site_url('part-stock/import/preview') ?>" method="post" enctype="multipart/form-data" data-turbo="false">
             <?= csrf_field() ?>
             <div class="mb-3">
               <label class="form-label">Select CSV or Excel file <span class="text-danger">*</span></label>

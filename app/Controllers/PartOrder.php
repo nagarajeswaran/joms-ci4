@@ -388,13 +388,19 @@ class PartOrder extends BaseController
                           ? number_format($touchVal, 0)
                           : number_format($touchVal, 2);
 
+            $scanCode = trim((string)($po['order_number'] ?? ''));
+
             $h  = '<div class="slip">';
             $h .= '<table class="hdr-table"><tr>';
             $h .= '<td><div class="po-no">' . htmlspecialchars($po['order_number']) . '</div>';
             $h .= '<div class="karigar-name">' . htmlspecialchars($po['karigar_name']) . '</div>';
             if ($linkedText) $h .= '<div class="linked">' . $linkedText . '</div>';
             $h .= '</td>';
-            $h .= '<td class="hdr-right"><div class="date-time">' . $dateTime . '</div></td>';
+            $h .= '<td class="hdr-right">';
+            $h .= '<barcode code="' . htmlspecialchars($scanCode) . '" type="C128A" size="0.8" height="0.8" />';
+            $h .= '<div class="linked" style="margin-top:2mm">Scan in Part Orders</div>';
+            $h .= '<div class="date-time">' . $dateTime . '</div>';
+            $h .= '</td>';
             $h .= '</tr></table>';
             $h .= '<div class="touch-line">டச்: ' . $touch . '%</div>';
 
@@ -906,5 +912,93 @@ class PartOrder extends BaseController
             'totalCash' => $totalCash,
             'hasRules'  => !empty($rules),
         ];
+    }
+
+    public function lookupOrder()
+    {
+        $raw = trim((string)($this->request->getGet('q') ?? ''));
+        if ($raw === '') return $this->response->setJSON(['error' => 'Empty order number']);
+
+        $normalized = preg_replace('/\s+/', '', strtoupper($raw));
+        $db = \Config\Database::connect();
+        $orders = $db->table('part_order')
+            ->select('id, order_number')
+            ->orderBy('id', 'DESC')
+            ->get()
+            ->getResultArray();
+
+        foreach ($orders as $order) {
+            $candidate = preg_replace('/\s+/', '', strtoupper((string)$order['order_number']));
+            if ($candidate === $normalized) {
+                return $this->response->setJSON([
+                    'id'           => (int)$order['id'],
+                    'order_number' => $order['order_number'],
+                    'url'          => base_url('part-orders/view/' . $order['id']),
+                ]);
+            }
+        }
+
+        return $this->response->setJSON(['error' => 'Part order not found: ' . $raw]);
+    }
+
+    /**
+     * AJAX: lookup gatti_stock or part_batch by batch_number (barcode scan)
+     * GET /part-orders/lookup-batch?q=BATCHNO
+     */
+    public function lookupBatch()
+    {
+        $q  = trim($this->request->getGet('q') ?? '');
+        if ($q === '') return $this->response->setJSON(['error' => 'Empty barcode']);
+
+        $db = \Config\Database::connect();
+
+        // 1. Try gatti_stock by batch_number
+        $gatti = $db->query('
+            SELECT gs.id, gs.batch_number, gs.weight_g, gs.qty_issued_g, gs.touch_pct,
+                   mj.job_number, s.name AS stamp_name, s.id AS stamp_id
+            FROM gatti_stock gs
+            LEFT JOIN melt_job mj ON mj.id = gs.melt_job_id
+            LEFT JOIN stamp s ON s.id = gs.stamp_id
+            WHERE gs.batch_number = ?
+            LIMIT 1
+        ', [$q])->getRowArray();
+
+        if ($gatti) {
+            $avail = (float)$gatti['weight_g'] - (float)$gatti['qty_issued_g'];
+            return $this->response->setJSON([
+                'type'         => 'gatti',
+                'id'           => (int)$gatti['id'],
+                'batch_number' => $gatti['batch_number'],
+                'job_number'   => $gatti['job_number'] ?? '',
+                'available_g'  => round($avail, 4),
+                'touch_pct'    => (float)$gatti['touch_pct'],
+                'stamp_name'   => $gatti['stamp_name'] ?? '',
+                'stamp_id'     => $gatti['stamp_id'] ? (int)$gatti['stamp_id'] : null,
+            ]);
+        }
+
+        // 2. Try part_batch by batch_number
+        $pb = $db->query('
+            SELECT pb.id, pb.batch_number, pb.part_id, pb.touch_pct,
+                   pb.weight_in_stock_g, p.name AS part_name
+            FROM part_batch pb
+            LEFT JOIN part p ON p.id = pb.part_id
+            WHERE pb.batch_number = ?
+            LIMIT 1
+        ', [$q])->getRowArray();
+
+        if ($pb) {
+            return $this->response->setJSON([
+                'type'         => 'part',
+                'id'           => (int)$pb['id'],
+                'batch_number' => $pb['batch_number'],
+                'part_id'      => (int)$pb['part_id'],
+                'part_name'    => $pb['part_name'] ?? '',
+                'available_g'  => round((float)$pb['weight_in_stock_g'], 4),
+                'touch_pct'    => (float)$pb['touch_pct'],
+            ]);
+        }
+
+        return $this->response->setJSON(['error' => 'No batch found for: ' . $q]);
     }
 }

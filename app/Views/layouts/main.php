@@ -96,9 +96,10 @@
                 'items' => [
                     [
                         'label' => 'Admin Dashboard',
-                        'url' => base_url('/'),
+                        'url' => base_url('admin/hub'),
                         'icon' => 'bi-speedometer2',
-                        'match' => static fn(string $uri): bool => $uri === '',
+                        'match' => static fn(string $uri): bool => $uri === '' || $uri === 'admin/hub',
+                        'turbo_off' => true,
                     ],
                 ],
             ],
@@ -204,8 +205,23 @@
             </button>
         </div>
         <div style="flex:1; overflow-y:auto;">
+        <?php
+            $activeZone = ($normalizedRole === 'admin') ? session()->get('admin_zone') : null;
+            $zoneModuleTitles = \Config\RoleAccess::getZoneModuleTitles($activeZone);
+        ?>
+        <?php if ($normalizedRole === 'admin' && $activeZone && $activeZone !== 'all'): ?>
+            <div style="padding:10px 16px; border-bottom:1px solid #34495e;">
+                <small style="color:#7f8c8d;">Zone: <?= esc(\Config\RoleAccess::ADMIN_ZONES[$activeZone]['label'] ?? '') ?></small>
+                <a href="<?= base_url('admin/zone/clear') ?>" data-turbo="false" style="display:block;color:#3498db;font-size:12px;margin-top:4px;">
+                    <i class="bi bi-arrow-left"></i> Switch Zone
+                </a>
+            </div>
+        <?php endif; ?>
         <?php foreach ($sidebarModules as $module): ?>
             <?php if (!$canViewModule($module, $normalizedRole, $userModules)): ?>
+                <?php continue; ?>
+            <?php endif; ?>
+            <?php if ($zoneModuleTitles !== null && !in_array($module['title'], $zoneModuleTitles, true)): ?>
                 <?php continue; ?>
             <?php endif; ?>
             <div class="nav-section"><?= esc($module['title']) ?></div>
@@ -215,7 +231,7 @@
                     $itemClasses = $isActive ? 'active' : '';
                     $itemStyles = !empty($item['indent']) ? 'padding-left:28px;font-size:12px;' : '';
                 ?>
-                <a href="<?= $item['url'] ?>" class="<?= $itemClasses ?>"<?= $itemStyles !== '' ? ' style="' . $itemStyles . '"' : '' ?>>
+                <a href="<?= $item['url'] ?>" class="<?= $itemClasses ?>"<?= $itemStyles !== '' ? ' style="' . $itemStyles . '"' : '' ?><?= !empty($item['turbo_off']) ? ' data-turbo="false"' : '' ?>>
                     <i class="bi <?= esc($item['icon']) ?>"></i><?= esc($item['label']) ?>
                 </a>
             <?php endforeach; ?>
@@ -261,23 +277,23 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script><script>var BASE_URL = '<?= base_url() ?>';</script>
     <script>
     (function() {
-        if (window.__jomsSidebarBound) return;
-        window.__jomsSidebarBound = true;
-
         var STORAGE_KEY = 'joms_sidebar';
-        var body = document.body;
         var sidebar = document.getElementById('sidebar');
         var closeBtn = document.getElementById('sidebarClose');
         var toggleBtn = document.getElementById('sidebarToggle');
         var backdrop = document.getElementById('sidebarBackdrop');
         var mobileQuery = window.matchMedia('(max-width: 991.98px)');
-        var navLinks = sidebar.querySelectorAll('a');
+
+        function getBody() {
+            return document.body;
+        }
 
         function isMobile() {
             return mobileQuery.matches;
         }
 
         function collapse() {
+            var body = getBody();
             if (isMobile()) {
                 body.classList.remove('sidebar-open-mobile');
                 body.classList.add('sidebar-collapsed');
@@ -288,7 +304,9 @@
             body.classList.add('sidebar-collapsed');
             localStorage.setItem(STORAGE_KEY, 'collapsed');
         }
+
         function expand() {
+            var body = getBody();
             if (isMobile()) {
                 body.classList.add('sidebar-open-mobile');
                 body.classList.remove('sidebar-collapsed');
@@ -299,7 +317,9 @@
             body.classList.remove('sidebar-collapsed');
             localStorage.setItem(STORAGE_KEY, 'open');
         }
+
         function syncSidebarMode() {
+            var body = getBody();
             if (isMobile()) {
                 sidebar.classList.remove('collapsed');
                 body.classList.add('sidebar-collapsed');
@@ -318,17 +338,23 @@
             body.classList.remove('sidebar-collapsed');
         }
 
-        syncSidebarMode();
+        if (!window.__jomsSidebarBound) {
+            window.__jomsSidebarBound = true;
 
-        closeBtn.addEventListener('click', collapse);
-        toggleBtn.addEventListener('click', expand);
-        backdrop.addEventListener('click', collapse);
-        mobileQuery.addEventListener('change', syncSidebarMode);
-        navLinks.forEach(function(link) {
-            link.addEventListener('click', function() {
-                if (isMobile()) collapse();
+            closeBtn.addEventListener('click', collapse);
+            toggleBtn.addEventListener('click', expand);
+            backdrop.addEventListener('click', collapse);
+            mobileQuery.addEventListener('change', syncSidebarMode);
+
+            sidebar.querySelectorAll('a').forEach(function(link) {
+                link.addEventListener('click', function() {
+                    if (isMobile()) collapse();
+                });
             });
-        });
+        }
+
+        syncSidebarMode();
+        document.addEventListener('turbo:load', syncSidebarMode);
     })();
     </script>
     <script>

@@ -206,7 +206,7 @@
         <h6 class="modal-title"><i class="bi bi-arrow-down-circle text-success"></i> Receive Back — <span id="rbSerial"></span></h6>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
     </div>
-    <form method="post" id="rbForm" action="" enctype="multipart/form-data">
+    <form method="post" id="rbForm" action="" enctype="multipart/form-data" data-turbo="false">
     <?= csrf_field() ?>
     <div class="modal-body">
         <div class="row g-2">
@@ -243,7 +243,7 @@
 <?= $this->section('scripts') ?>
 <script>
 var rbModal;
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('turbo:load', function() {
     rbModal = new bootstrap.Modal(document.getElementById('rbModal'));
 });
 function openRbModal(id, serial, issued) {
