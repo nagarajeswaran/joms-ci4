@@ -33,14 +33,22 @@
     <!-- Stamp + Touch Shop Name row -->
     <div class="col-sm-4">
         <label class="form-label">Stamp</label>
-        <select name="stamp_id" class="form-select">
+        <select name="stamp_id" id="stampSelect" class="form-select">
             <option value="">— Select Stamp —</option>
             <?php foreach ($stamps as $s): ?>
             <option value="<?= $s['id'] ?>" <?= old('stamp_id', $prefill['stamp_id'] ?? '') == $s['id'] ? 'selected' : '' ?>>
                 <?= esc($s['name']) ?>
             </option>
             <?php endforeach; ?>
+            <option value="__new__">+ Add New Stamp...</option>
         </select>
+        <div id="newStampRow" class="mt-2 d-none">
+            <div class="input-group input-group-sm">
+                <input type="text" class="form-control" id="newStampName" placeholder="Enter new stamp name...">
+                <button type="button" class="btn btn-success" onclick="addNewStamp()"><i class="bi bi-plus"></i> Add</button>
+                <button type="button" class="btn btn-outline-secondary" onclick="cancelNewStamp()">Cancel</button>
+            </div>
+        </div>
     </div>
 
     <!-- Touch Shop Name (combo: existing + add new) -->
@@ -131,6 +139,42 @@
 <?= $this->endSection() ?>
 <?= $this->section('scripts') ?>
 <script>
+document.getElementById('stampSelect').addEventListener('change', function() {
+    if (this.value === '__new__') {
+        document.getElementById('newStampRow').classList.remove('d-none');
+        document.getElementById('newStampName').focus();
+        this.value = '';
+    }
+});
+function addNewStamp() {
+    var name = document.getElementById('newStampName').value.trim();
+    if (!name) { alert('Enter a stamp name'); return; }
+    var body = new URLSearchParams({name: name});
+    fetch('<?= base_url("orders/createStamp") ?>', {method:'POST', body:body})
+        .then(function(r){ return r.json(); })
+        .then(function(d) {
+            if (d.id) {
+                var sel = document.getElementById('stampSelect');
+                var opt = document.createElement('option');
+                opt.value = d.id;
+                opt.textContent = name;
+                opt.selected = true;
+                sel.insertBefore(opt, sel.querySelector('option[value="__new__"]'));
+                cancelNewStamp();
+            } else {
+                alert(d.error || 'Failed to add stamp');
+            }
+        });
+}
+function cancelNewStamp() {
+    document.getElementById('newStampRow').classList.add('d-none');
+    document.getElementById('newStampName').value = '';
+}
+document.getElementById('newStampName').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') { e.preventDefault(); addNewStamp(); }
+    if (e.key === 'Escape') cancelNewStamp();
+});
+
 var selShop  = document.getElementById('selTouchShop');
 var inpNew   = document.getElementById('inpNewShop');
 var LS_KEY   = 'last_touch_shop';
