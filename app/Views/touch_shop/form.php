@@ -224,7 +224,7 @@ function openCamera() {
         alert('Camera not supported on this browser. Use HTTPS or a modern browser.');
         return;
     }
-    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } } })
         .then(function(stream) {
             _stream = stream;
             var video = document.getElementById('cameraPreview');
@@ -249,13 +249,25 @@ function closeCamera() {
 function capturePhoto() {
     var video = document.getElementById('cameraPreview');
     var canvas = document.getElementById('cameraCanvas');
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    canvas.getContext('2d').drawImage(video, 0, 0);
+    var srcW = video.videoWidth;
+    var srcH = video.videoHeight;
+
+    // Resize to max 1200px on longest side for compression + clarity
+    var maxPx = 1200;
+    var scale = 1;
+    if (srcW > maxPx || srcH > maxPx) {
+        scale = Math.min(maxPx / srcW, maxPx / srcH);
+    }
+    canvas.width = Math.round(srcW * scale);
+    canvas.height = Math.round(srcH * scale);
+
+    var ctx = canvas.getContext('2d');
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     closeCamera();
 
     canvas.toBlob(function(blob) {
-        // Create a File from the blob and assign to the file input
         var file = new File([blob], 'camera_photo_' + Date.now() + '.jpg', { type: 'image/jpeg' });
         var dt = new DataTransfer();
         dt.items.add(file);
@@ -264,7 +276,7 @@ function capturePhoto() {
         // Show preview
         document.getElementById('capturedImg').src = URL.createObjectURL(blob);
         document.getElementById('capturedPreview').classList.remove('d-none');
-    }, 'image/jpeg', 0.85);
+    }, 'image/jpeg', 0.82);
 }
 
 function removeCaptured() {
