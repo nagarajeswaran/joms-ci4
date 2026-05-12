@@ -118,13 +118,11 @@
             <input type="file" name="sample_image" id="fileInput" accept="image/*" class="form-control">
             <button type="button" class="btn btn-outline-primary btn-sm text-nowrap" onclick="openCamera()"><i class="bi bi-camera"></i> Take Photo</button>
         </div>
-        <div id="cameraBox" class="mt-2 d-none">
-            <div class="border rounded p-2 bg-light">
-                <video id="cameraPreview" autoplay playsinline style="width:100%;max-width:400px;border-radius:4px;display:block;"></video>
-                <div class="mt-2 d-flex gap-2">
-                    <button type="button" class="btn btn-success btn-sm" onclick="capturePhoto()"><i class="bi bi-camera-fill"></i> Capture</button>
-                    <button type="button" class="btn btn-outline-secondary btn-sm" onclick="closeCamera()">Cancel</button>
-                </div>
+        <div id="cameraBox" class="d-none" style="position:fixed;inset:0;z-index:9999;background:#000;display:flex;flex-direction:column;align-items:center;justify-content:center;">
+            <video id="cameraPreview" autoplay playsinline style="width:100%;height:calc(100% - 60px);object-fit:cover;"></video>
+            <div style="position:absolute;bottom:12px;left:0;right:0;display:flex;justify-content:center;gap:12px;">
+                <button type="button" class="btn btn-success btn-lg rounded-circle" onclick="capturePhoto()" style="width:56px;height:56px;"><i class="bi bi-camera-fill"></i></button>
+                <button type="button" class="btn btn-light btn-sm rounded-pill align-self-center" onclick="closeCamera()"><i class="bi bi-x-lg"></i> Close</button>
             </div>
         </div>
         <canvas id="cameraCanvas" style="display:none;"></canvas>
@@ -229,7 +227,9 @@ function openCamera() {
             _stream = stream;
             var video = document.getElementById('cameraPreview');
             video.srcObject = stream;
-            document.getElementById('cameraBox').classList.remove('d-none');
+            var box = document.getElementById('cameraBox');
+            box.classList.remove('d-none');
+            box.style.display = 'flex';
         })
         .catch(function(err) {
             alert('Could not access camera: ' + err.message);
@@ -243,7 +243,9 @@ function closeCamera() {
     }
     var video = document.getElementById('cameraPreview');
     video.srcObject = null;
-    document.getElementById('cameraBox').classList.add('d-none');
+    var box = document.getElementById('cameraBox');
+    box.style.display = 'none';
+    box.classList.add('d-none');
 }
 
 function capturePhoto() {
