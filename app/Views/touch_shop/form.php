@@ -114,7 +114,24 @@
             <small class="text-muted ms-2">Current image — upload new to replace</small>
         </div>
         <?php endif; ?>
-        <input type="file" name="sample_image" accept="image/*" class="form-control">
+        <div class="d-flex gap-2 align-items-start">
+            <input type="file" name="sample_image" id="fileInput" accept="image/*" class="form-control">
+            <button type="button" class="btn btn-outline-primary btn-sm text-nowrap" onclick="openCamera()"><i class="bi bi-camera"></i> Take Photo</button>
+        </div>
+        <div id="cameraBox" class="mt-2 d-none">
+            <div class="border rounded p-2 bg-light">
+                <video id="cameraPreview" autoplay playsinline style="width:100%;max-width:400px;border-radius:4px;display:block;"></video>
+                <div class="mt-2 d-flex gap-2">
+                    <button type="button" class="btn btn-success btn-sm" onclick="capturePhoto()"><i class="bi bi-camera-fill"></i> Capture</button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm" onclick="closeCamera()">Cancel</button>
+                </div>
+            </div>
+        </div>
+        <canvas id="cameraCanvas" style="display:none;"></canvas>
+        <div id="capturedPreview" class="mt-2 d-none">
+            <img id="capturedImg" src="" style="height:80px;border-radius:4px;border:1px solid #dee2e6;">
+            <button type="button" class="btn btn-outline-danger btn-sm ms-2" onclick="removeCaptured()"><i class="bi bi-x"></i> Remove</button>
+        </div>
     </div>
 
     <!-- Notes -->
@@ -198,5 +215,62 @@ document.querySelector('form').addEventListener('submit', function() {
     var name = selShop.value === '__new__' ? inpNew.value.trim() : selShop.value;
     if (name && name !== '__new__') localStorage.setItem(LS_KEY, name);
 });
+
+// ========== CAMERA ==========
+var _stream = null;
+
+function openCamera() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        alert('Camera not supported on this browser. Use HTTPS or a modern browser.');
+        return;
+    }
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+        .then(function(stream) {
+            _stream = stream;
+            var video = document.getElementById('cameraPreview');
+            video.srcObject = stream;
+            document.getElementById('cameraBox').classList.remove('d-none');
+        })
+        .catch(function(err) {
+            alert('Could not access camera: ' + err.message);
+        });
+}
+
+function closeCamera() {
+    if (_stream) {
+        _stream.getTracks().forEach(function(t) { t.stop(); });
+        _stream = null;
+    }
+    var video = document.getElementById('cameraPreview');
+    video.srcObject = null;
+    document.getElementById('cameraBox').classList.add('d-none');
+}
+
+function capturePhoto() {
+    var video = document.getElementById('cameraPreview');
+    var canvas = document.getElementById('cameraCanvas');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext('2d').drawImage(video, 0, 0);
+    closeCamera();
+
+    canvas.toBlob(function(blob) {
+        // Create a File from the blob and assign to the file input
+        var file = new File([blob], 'camera_photo_' + Date.now() + '.jpg', { type: 'image/jpeg' });
+        var dt = new DataTransfer();
+        dt.items.add(file);
+        document.getElementById('fileInput').files = dt.files;
+
+        // Show preview
+        document.getElementById('capturedImg').src = URL.createObjectURL(blob);
+        document.getElementById('capturedPreview').classList.remove('d-none');
+    }, 'image/jpeg', 0.85);
+}
+
+function removeCaptured() {
+    document.getElementById('fileInput').value = '';
+    document.getElementById('capturedPreview').classList.add('d-none');
+    document.getElementById('capturedImg').src = '';
+}
 </script>
 <?= $this->endSection() ?>
