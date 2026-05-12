@@ -135,7 +135,7 @@ foreach ($items as $_itm) {
             <?php endif; ?>
             <div>
                 <strong><?= esc(!empty($item['pattern_tamil_name']) ? $item['pattern_tamil_name'] : (!empty($item['pattern_name']) ? $item['pattern_name'] : $item['product_name'])) ?></strong>
-                <?php if ($item['sku']): ?><small class="text-muted ms-1">(<?= esc($item['sku']) ?>)</small><?php endif; ?>
+                <?php if ($item['sku'] || !empty($item['pattern_code'])): ?><small class="text-muted ms-1">(<?= esc($item['sku']) ?><?php if (!empty($item['pattern_code'])): ?> <?= esc($item['pattern_code']) ?><?php endif; ?>)</small><?php endif; ?>
                 <?php if ($item['body_name']): ?><span class="badge bg-secondary-subtle text-secondary border ms-1"><?= esc($item['body_name']) ?></span><?php endif; ?>
             </div>
             <!-- Est weight badge per item -->

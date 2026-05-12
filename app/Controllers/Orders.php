@@ -766,7 +766,7 @@ class Orders extends BaseController
                    p.product_type_id, p.main_part_id,
                    pt.name as type_name, pt.variations as pt_variations, pt.multiplication_factor,
                    b.clasp_size, b.name as body_name,
-                   pp.name as pattern_name, pp.tamil_name as pattern_tamil_name,
+                   pp.name as pattern_name, pp.tamil_name as pattern_tamil_name, pp.pattern_code,
                    s.name as stamp_name
             FROM order_items oi
             JOIN product p ON p.id = oi.product_id
